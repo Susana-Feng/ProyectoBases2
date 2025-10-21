@@ -1,6 +1,19 @@
 use tiendaDB;
 
 // =======================
+// Limpiar colecciones existentes (si existen)
+// =======================
+if (db.getCollectionNames().includes("clientes")) {
+  db.clientes.drop();
+}
+if (db.getCollectionNames().includes("productos")) {
+  db.productos.drop();
+}
+if (db.getCollectionNames().includes("ordenes")) {
+  db.ordenes.drop();
+}
+
+// =======================
 // Colección: clientes
 // =======================
 db.createCollection("clientes", {
@@ -12,7 +25,7 @@ db.createCollection("clientes", {
         nombre: { bsonType: "string", description: "Nombre del cliente" },
         email: { bsonType: "string", pattern: "^.+@.+\\..+$", description: "Correo válido" },
         genero: {
-          enum: ["Masculino", "Femenino", "Otro"],
+          enum: ["Masculino", "Femenino", "Otro"], //Género con tercer valor ‘Otro’
           description: "Debe ser Masculino, Femenino u Otro"
         },
         pais: { bsonType: "string", description: "Código de país" },
@@ -69,10 +82,10 @@ db.createCollection("ordenes", {
         cliente_id: { bsonType: "objectId", description: "Referencia a cliente" },
         fecha: { bsonType: "date", description: "Fecha de la orden" },
         canal: { enum: ["WEB", "TIENDA"], description: "Canal de venta" },
-        moneda: { enum: ["CRC", "USD"], description: "Moneda usada" },
-        total: { bsonType: "int", minimum: 0, description: "Total en colones" },
+        moneda: { enum: ["CRC"], description: "Moneda usada" }, //Montos en CRC (sin decimales)
+        total: { bsonType: "int", minimum: 0, description: "Total en colones" }, //Montos en enteros
         items: {
-          bsonType: "array",
+          bsonType: "array", //Estructura anidada (arrays items)
           minItems: 1,
           items: {
             bsonType: "object",
