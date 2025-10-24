@@ -1,0 +1,56 @@
+name: mssql_sales_stack
+
+services:
+  mssql_sales:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: mssql_sales
+    env_file:
+      - ../../../../.env.local
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASS:-YourStrong@Passw0rd1}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "${MSSQL_SA_PORT:-1433}:1433"
+    volumes:
+      - mssql_sales_data:/var/opt/mssql
+      - ./init:/scripts
+    networks:
+      - sales_net
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P $$MSSQL_SA_PASSWORD -Q \"SELECT 1\" || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  init_sales:
+    image: mcr.microsoft.com/mssql-tools:latest
+    container_name: mssql_sales_init
+    depends_on:
+      mssql_sales:
+        condition: service_healthy
+    env_file:
+      - ../../../../.env.local
+    environment:
+      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASS:-YourStrong@Passw0rd1}"
+      MSSQL_HOST: "mssql_sales"
+    volumes:
+      - ./init:/scripts
+    networks:
+      - sales_net
+    profiles:
+      - init
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        find /scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+        bash /scripts/run-init.sh
+
+volumes:
+  mssql_sales_data:
+    name: mssql_sales_data
+
+networks:
+  sales_net:
+    external: false
