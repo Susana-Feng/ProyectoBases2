@@ -148,3 +148,30 @@ bd2-proyecto/
 ├─ pyproject.toml                     # Config Python (uv/poetry/pip-tools)
 └─ turbo.json                         # Turborepo (pipelines de build/test/lint)
 ```
+
+```bash
+# 1. Levantar la BD
+docker compose -f infra/docker/databases/mssql/compose.yaml \
+  --env-file .env.local \
+  up -d mssql_sales
+
+# 2. Inicializar BD
+docker compose -f infra/docker/databases/mssql/compose.yaml \
+  --env-file .env.local \
+  --profile init \
+  up init_sales
+
+# 3. Ver logs de inicialización
+docker compose -f infra/docker/databases/mssql/compose.yaml \
+  --env-file .env.local \
+  logs -f init_sales
+
+docker compose -f infra/docker/databases/mssql/compose.yaml \
+  --env-file .env.local \
+  logs -f mssql_sales
+
+# 4. Parar servicios
+docker compose -f infra/docker/databases/mssql/compose.yaml \
+  --env-file .env.local \
+  down
+```
