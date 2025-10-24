@@ -1,0 +1,15 @@
+{
+  "name": "ProyectoBases2",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "pnpm@10.18.2"
+}
