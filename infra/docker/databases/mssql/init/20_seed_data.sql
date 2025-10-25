@@ -1,182 +1,101 @@
 /* ================================================================
  Script de datos semilla para MS SQL Server
- Base de datos: sales_db
  Esquema: sales_ms
+ Base de datos: sales_db
  Descripción: Inserta datos iniciales para pruebas y desarrollo
+ Heterogeneidades:
+ - Género: 'Masculino', 'Femenino'
+ - Moneda: Siempre 'USD'
+ - SKU: Código oficial de producto
 ================================================================
 */
 
 USE sales_db;
 GO
 
--- ========= TABLAS CATÁLOGOS - Inserción de datos =========
-
--- Insertar Géneros
-INSERT INTO sales_ms.Genero (GeneroId, Nombre, Descripcion)
-VALUES 
-    (1, N'Masculino', N'Cliente de género masculino'),
-    (2, N'Femenino', N'Cliente de género femenino');
-GO
-
--- Insertar Países
-INSERT INTO sales_ms.Pais (Nombre, CodigoISO)
-VALUES 
-    (N'Colombia', N'CO'),
-    (N'México', N'MX'),
-    (N'Argentina', N'AR'),
-    (N'Brasil', N'BR'),
-    (N'Chile', N'CL'),
-    (N'Perú', N'PE'),
-    (N'España', N'ES'),
-    (N'Estados Unidos', N'US');
-GO
-
--- Insertar Canales de Venta
-INSERT INTO sales_ms.Canal (CanalId, Nombre, Descripcion)
-VALUES 
-    (1, N'WEB', N'Ventas a través del sitio web'),
-    (2, N'TIENDA', N'Ventas en tienda física'),
-    (3, N'APP', N'Ventas a través de la aplicación móvil');
-GO
-
--- Insertar Categorías de Productos
-INSERT INTO sales_ms.Categoria (Nombre, Descripcion)
-VALUES 
-    (N'Electrónica', N'Dispositivos electrónicos y componentes'),
-    (N'Ropa y Accesorios', N'Prendas de vestir y accesorios'),
-    (N'Hogar', N'Artículos para el hogar'),
-    (N'Libros', N'Libros y material de lectura'),
-    (N'Deportes', N'Equipamiento y accesorios deportivos'),
-    (N'Belleza', N'Productos de belleza y cuidado personal');
-GO
-
--- Insertar Monedas
-INSERT INTO sales_ms.Moneda (MonedaId, Nombre, Simbolo)
-VALUES 
-    (N'USD', N'Dólar Estadounidense', N'$'),
-    (N'COP', N'Peso Colombiano', N'$'),
-    (N'MXN', N'Peso Mexicano', N'$'),
-    (N'ARS', N'Peso Argentino', N'$'),
-    (N'BRL', N'Real Brasileño', N'R$'),
-    (N'CLP', N'Peso Chileno', N'$'),
-    (N'PEN', N'Sol Peruano', N'S/'),
-    (N'EUR', N'Euro', N'€');
-GO
-
--- ========= TABLAS PRINCIPALES =========
-
 -- Insertar Clientes
-INSERT INTO sales_ms.Cliente (Nombre, Email, GeneroId, PaisId, FechaRegistro)
-VALUES 
-    (N'Juan Pérez', N'juan.perez@example.com', 1, 1, '2025-01-15'),
-    (N'María García', N'maria.garcia@example.com', 2, 1, '2025-01-20'),
-    (N'Carlos López', N'carlos.lopez@example.com', 1, 2, '2025-02-05'),
-    (N'Ana Martínez', N'ana.martinez@example.com', 2, 2, '2025-02-10'),
-    (N'Roberto Rodríguez', N'roberto.rodriguez@example.com', 1, 3, '2025-02-15'),
-    (N'Sofía González', N'sofia.gonzalez@example.com', 2, 4, '2025-02-20'),
-    (N'Diego Fernández', N'diego.fernandez@example.com', 1, 5, '2025-03-01'),
-    (N'Gabriela Sánchez', N'gabriela.sanchez@example.com', 2, 6, '2025-03-05');
+INSERT INTO dbo.Cliente (Nombre, Email, Genero, Pais, FechaRegistro) VALUES
+('Juan Pérez López', 'juan.perez@example.com', 'Masculino', 'Colombia', '2025-01-15'),
+('María García Rodríguez', 'maria.garcia@example.com', 'Femenino', 'Colombia', '2025-01-20'),
+('Carlos López Martínez', 'carlos.lopez@example.com', 'Masculino', 'México', '2025-02-05'),
+('Ana Martínez Sánchez', 'ana.martinez@example.com', 'Femenino', 'México', '2025-02-10'),
+('Roberto Rodríguez García', 'roberto.rodriguez@example.com', 'Masculino', 'Argentina', '2025-02-15'),
+('Sofía González López', 'sofia.gonzalez@example.com', 'Femenino', 'Brasil', '2025-02-20'),
+('Diego Fernández Torres', 'diego.fernandez@example.com', 'Masculino', 'Chile', '2025-03-01'),
+('Gabriela Sánchez Ruiz', 'gabriela.sanchez@example.com', 'Femenino', 'Perú', '2025-03-05');
+
 GO
 
 -- Insertar Productos
-INSERT INTO sales_ms.Producto (SKU, Nombre, CategoriaId)
-VALUES 
-    (N'ELEC-001', N'Laptop Dell XPS 13', 1),
-    (N'ELEC-002', N'Monitor Samsung 24"', 1),
-    (N'ELEC-003', N'Mouse Logitech MX Master 3', 1),
-    (N'ROPA-001', N'Camiseta Básica Hombre', 2),
-    (N'ROPA-002', N'Jeans Azul Clásico', 2),
-    (N'ROPA-003', N'Zapatos Deportivos Nike', 2),
-    (N'HOGAR-001', N'Almohada Memoria de Espuma', 3),
-    (N'HOGAR-002', N'Sábanas Algodón 100%', 3),
-    (N'LIBRO-001', N'Cien Años de Soledad - García Márquez', 4),
-    (N'LIBRO-002', N'Don Quijote - Miguel de Cervantes', 4),
-    (N'DEPO-001', N'Mancuernas Ajustables Set', 5),
-    (N'DEPO-002', N'Tapete Yoga Premium', 5),
-    (N'BELLE-001', N'Protector Solar SPF 50', 6),
-    (N'BELLE-002', N'Crema Facial Hidratante', 6);
+INSERT INTO dbo.Producto (SKU, Nombre, Categoria) VALUES
+('SKU-ELEC-001', 'Laptop Dell XPS 13', 'Electrónica'),
+('SKU-ELEC-002', 'Monitor Samsung 24"', 'Electrónica'),
+('SKU-ELEC-003', 'Mouse Logitech MX Master 3', 'Electrónica'),
+('SKU-ELEC-004', 'Teclado Mecánico RGB', 'Electrónica'),
+('SKU-ROPA-001', 'Camiseta Básica Hombre L', 'Ropa y Accesorios'),
+('SKU-ROPA-002', 'Jeans Azul Clásico 32', 'Ropa y Accesorios'),
+('SKU-ROPA-003', 'Zapatos Deportivos Nike', 'Ropa y Accesorios'),
+('SKU-HOGAR-001', 'Almohada Memoria de Espuma', 'Hogar'),
+('SKU-HOGAR-002', 'Sábanas Algodón 100%', 'Hogar'),
+('SKU-HOGAR-003', 'Mantel Decorativo Premium', 'Hogar'),
+('SKU-LIBRO-001', 'Cien Años de Soledad - García Márquez', 'Libros'),
+('SKU-LIBRO-002', 'Don Quijote - Miguel de Cervantes', 'Libros'),
+('SKU-LIBRO-003', 'Ficciones - Jorge Luis Borges', 'Libros'),
+('SKU-DEPO-001', 'Mancuernas Ajustables Set', 'Deportes'),
+('SKU-DEPO-002', 'Tapete Yoga Premium', 'Deportes'),
+('SKU-BELLE-001', 'Protector Solar SPF 50', 'Belleza'),
+('SKU-BELLE-002', 'Crema Facial Hidratante', 'Belleza'),
+('SKU-BELLE-003', 'Serum Vitamina C', 'Belleza');
+
 GO
 
--- ========= TABLAS TRANSACCIONALES =========
-
 -- Insertar Órdenes
-INSERT INTO sales_ms.Orden (ClienteId, Fecha, CanalId, MonedaId, Total, Estado)
-VALUES 
-    (1, '2025-03-10 10:30:00', 1, 'USD', 1299.99, 'ENTREGADA'),
-    (2, '2025-03-11 14:15:00', 1, 'COP', 4500000.00, 'CONFIRMADA'),
-    (3, '2025-03-12 09:45:00', 2, 'MXN', 15999.50, 'ENTREGADA'),
-    (4, '2025-03-13 16:20:00', 3, 'USD', 89.99, 'ENVIADA'),
-    (5, '2025-03-14 11:00:00', 1, 'ARS', 45000.00, 'PENDIENTE'),
-    (1, '2025-03-15 13:30:00', 2, 'USD', 259.98, 'ENTREGADA'),
-    (6, '2025-03-16 15:45:00', 3, 'BRL', 899.90, 'CONFIRMADA'),
-    (7, '2025-03-17 10:15:00', 1, 'CLP', 399990.00, 'ENTREGADA'),
-    (8, '2025-03-18 12:00:00', 1, 'PEN', 599.95, 'CONFIRMADA');
+INSERT INTO dbo.Orden (ClienteId, Fecha, Canal, Moneda, Total) VALUES
+(1, '2025-03-10 10:30:00', 'WEB', 'USD', 1299.99),
+(2, '2025-03-11 14:15:00', 'WEB', 'USD', 850.00),
+(3, '2025-03-12 09:45:00', 'TIENDA', 'USD', 1599.50),
+(4, '2025-03-13 16:20:00', 'APP', 'USD', 89.99),
+(5, '2025-03-14 11:00:00', 'WEB', 'USD', 450.00),
+(1, '2025-03-15 13:30:00', 'TIENDA', 'USD', 259.98),
+(6, '2025-03-16 15:45:00', 'APP', 'USD', 899.90),
+(7, '2025-03-17 10:15:00', 'WEB', 'USD', 199.99),
+(8, '2025-03-18 12:00:00', 'WEB', 'USD', 599.95);
+
 GO
 
 -- Insertar Detalles de Órdenes
+INSERT INTO dbo.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnit, DescuentoPct) VALUES
 -- Orden 1: Juan compra Laptop y Monitor
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (1, 1, 1, 999.99, 0.00),
-    (1, 2, 1, 299.99, 0.00);
-GO
-
+(1, 1, 1, 999.99, NULL),
+(1, 2, 1, 299.99, NULL),
 -- Orden 2: María compra Camiseta y Jeans
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (2, 4, 2, 25000.00, 5.00),
-    (2, 5, 1, 120000.00, 0.00);
-GO
-
+(2, 5, 2, 25.00, 10.00),
+(2, 6, 1, 120.00, NULL),
 -- Orden 3: Carlos compra Zapatos
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (3, 6, 1, 15999.50, 0.00);
-GO
-
+(3, 7, 1, 1599.50, NULL),
 -- Orden 4: Ana compra Mouse y Tapete Yoga
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (4, 3, 1, 49.99, 10.00),
-    (4, 12, 1, 39.99, 0.00);
-GO
-
+(4, 3, 1, 49.99, NULL),
+(4, 15, 1, 39.99, NULL),
 -- Orden 5: Roberto compra Almohada y Sábanas
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (5, 7, 1, 15000.00, 0.00),
-    (5, 8, 2, 15000.00, 0.00);
-GO
-
--- Orden 6: Juan compra Libros (orden adicional)
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (6, 9, 1, 29.99, 15.00),
-    (6, 10, 1, 29.99, 0.00);
-GO
-
+(5, 8, 1, 150.00, NULL),
+(5, 9, 2, 150.00, NULL),
+-- Orden 6: Juan compra Libros
+(6, 11, 1, 29.99, 5.00),
+(6, 12, 1, 29.99, NULL),
 -- Orden 7: Sofía compra Productos de Belleza
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (7, 13, 1, 49.99, 0.00),
-    (7, 14, 1, 54.99, 8.00);
-GO
-
+(7, 16, 1, 49.99, NULL),
+(7, 17, 1, 54.99, NULL),
 -- Orden 8: Diego compra Mancuernas
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (8, 11, 1, 199990.00, 0.00);
-GO
-
+(8, 14, 1, 199.99, NULL),
 -- Orden 9: Gabriela compra Crema Facial
-INSERT INTO sales_ms.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnitario, DescuentoPct)
-VALUES 
-    (9, 14, 1, 59.99, 0.00);
+(9, 17, 1, 59.95, NULL);
+
 GO
 
-PRINT N'✓ Datos semilla insertados exitosamente en todas las tablas.';
-PRINT N'✓ Total de clientes: 8';
-PRINT N'✓ Total de productos: 14';
-PRINT N'✓ Total de órdenes: 9';
-PRINT N'✓ Total de detalles de órdenes: 13';
+-- Mensaje de confirmación
+PRINT '✓ Datos semilla insertados correctamente en el esquema dbo';
+PRINT '  - 8 Clientes (Masculino/Femenino)';
+PRINT '  - 18 Productos con SKU oficial';
+PRINT '  - 9 Órdenes en USD';
+PRINT '  - 15 Líneas de detalle';
 GO

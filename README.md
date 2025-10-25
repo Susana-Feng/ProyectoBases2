@@ -149,6 +149,79 @@ bd2-proyecto/
 └─ turbo.json                         # Turborepo (pipelines de build/test/lint)
 ```
 
+## Inicio rápido
+
+### 1. Preparar entorno
+
+#### Crear red compartida
+
+```bash
+# Crear la red bridge compartida para todas las bases de datos (si no existe)
+docker network create --driver bridge sales_net || echo "La red sales_net ya existe"
+```
+
+#### Variables de entorno
+
+Crea un archivo `.env.local` basado en `.env.example`:
+
+```bash
+# MSSQL - Sales
+MSSQL_SA_PASS=YourStrong@Passw0rd1
+MSSQL_SA_PORT=1433
+
+# MSSQL - Datawarehouse
+MSSQL_DW_PASS=YourStrong@Passw0rd1
+MSSQL_DW_PORT=1434
+
+# MySQL
+MYSQL_ROOT_PASS=YourStrong@Passw0rd1
+MYSQL_USER=sales_user
+MYSQL_PASS=sales_pass_123
+MYSQL_PORT=3306
+```
+
+### 2. Levantar bases de datos
+
+Usa el script `dev_up.sh` para gestionar las bases de datos de desarrollo:
+
+```bash
+# Levantar todas las bases de datos disponibles
+./scripts/dev_up.sh
+
+# Levantar todas las bases de datos (explícito)
+./scripts/dev_up.sh --up all
+
+# Levantar solo MSSQL
+./scripts/dev_up.sh --up mssql
+
+# Reinicializar MSSQL (borra datos existentes y vuelve a crear)
+./scripts/dev_up.sh --init mssql
+
+# Reinicializar MySQL
+./scripts/dev_up.sh --init mysql
+
+# Reinicializar todas las bases de datos
+./scripts/dev_up.sh --init all
+
+# Detener todas las bases de datos
+./scripts/dev_up.sh --down all
+
+# Ver logs de MySQL
+./scripts/dev_up.sh --logs mysql
+
+# Ver ayuda completa
+./scripts/dev_up.sh --help
+```
+
+### Bases de datos disponibles
+
+- **MSSQL**: Microsoft SQL Server 2022 con base de datos `DB_SALES` y esquema `dbo`
+- **MySQL**: MySQL 8.x con base de datos `DB_SALES`
+- **MongoDB**: MongoDB (próximamente)
+- **Neo4j**: Neo4j (próximamente)
+
+## Desarrollo
+
 ```bash
 # 1. Levantar la BD
 docker compose -f infra/docker/databases/mssql/compose.yaml \
@@ -166,6 +239,7 @@ docker compose -f infra/docker/databases/mssql/compose.yaml \
   --env-file .env.local \
   logs -f init_sales
 
+# 3. Ver logs de la BD
 docker compose -f infra/docker/databases/mssql/compose.yaml \
   --env-file .env.local \
   logs -f mssql_sales
@@ -173,5 +247,5 @@ docker compose -f infra/docker/databases/mssql/compose.yaml \
 # 4. Parar servicios
 docker compose -f infra/docker/databases/mssql/compose.yaml \
   --env-file .env.local \
-  down
+  down --volumes --remove-orphans
 ```

@@ -21,6 +21,4 @@ run_sql() {
 
 [ -f /scripts/00_create_db.sql ] && run_sql /scripts/00_create_db.sql
 [ -f /scripts/10_schema.sql ] && run_sql /scripts/10_schema.sql
-[ -f /scripts/20_seed_data.sql ] && run_sql /scripts/20_seed_data.sql
-
 echo ">> init_sales OK"

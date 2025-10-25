@@ -1,0 +1,66 @@
+name: proyecto-bases2-dev
+
+services:
+  # Microsoft SQL Server
+  mssql_sales:
+    extends:
+      file: ./databases/mssql/compose.yaml
+      service: mssql_sales
+    profiles:
+      - mssql
+      - all
+
+  mssql_init:
+    extends:
+      file: ./databases/mssql/compose.yaml
+      service: init_sales
+    profiles:
+      - mssql-init
+      - init
+
+  # MySQL
+  mysql_sales:
+    extends:
+      file: ./databases/mysql/compose.yaml
+      service: mysql_sales
+    profiles:
+      - mysql
+      - all
+
+  mysql_init:
+    extends:
+      file: ./databases/mysql/compose.yaml
+      service: init_sales
+    profiles:
+      - mysql-init
+      - init
+
+  # MongoDB (placeholder - implementar cuando esté listo)
+  # mongo_sales:
+  #   extends:
+  #     file: ./databases/mongo/compose.yaml
+  #     service: mongo_sales
+  #   profiles:
+  #     - mongo
+  #     - all
+
+  # Neo4j (placeholder - implementar cuando esté listo)
+  # neo4j_sales:
+  #   extends:
+  #     file: ./databases/neo4j/compose.yaml
+  #     service: neo4j_sales
+  #   profiles:
+  #     - neo4j
+  #     - all
+
+networks:
+  sales_net:
+    name: sales_net
+    driver: bridge
+    external: true
+
+volumes:
+  mssql_sales_data:
+    name: mssql_sales_data
+  mysql_sales_data:
+    name: mysql_sales_data
