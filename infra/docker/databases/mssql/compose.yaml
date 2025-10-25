@@ -53,4 +53,6 @@ volumes:
 
 networks:
   sales_net:
-    external: false
+    name: sales_net
+    driver: bridge
+    external: true
