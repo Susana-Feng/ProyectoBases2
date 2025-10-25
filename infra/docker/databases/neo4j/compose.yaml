@@ -1,0 +1,76 @@
+name: neo4j_sales_stack
+
+services:
+  neo4j:
+    image: neo4j:5
+    container_name: neo4j_sales
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: "${NEO4J_AUTH:-neo4j/ChangeMe123!}"
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_initial_dbms_default__database: "db-sales"
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
+    volumes:
+      - neo4j_sales_data:/data
+      - neo4j_sales_logs:/logs
+      - neo4j_sales_plugins:/plugins
+      - neo4j_sales_import:/import
+    networks:
+      - sales_net
+    healthcheck:
+      test: [ "CMD-SHELL", "USER=\"$$(echo \"$$NEO4J_AUTH\" | cut -d'/' -f1)\"; PASS=\"$$(echo \"$$NEO4J_AUTH\" | cut -d'/' -f2)\"; /var/lib/neo4j/bin/cypher-shell -a bolt://localhost:${NEO4J_BOLT_PORT:-7687} -u \"$$USER\" -p \"$$PASS\" --non-interactive --format plain 'RETURN 1' || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  init_neo4j:
+    image: neo4j:5
+    container_name: neo4j_sales_init
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    env_file:
+      - ../../../../.env.local
+    environment:
+      NEO4J_AUTH: "${NEO4J_AUTH:-neo4j/ChangeMe123!}"
+      NEO4J_HOST: "neo4j"
+    volumes:
+      - ./init:/scripts
+    networks:
+      - sales_net
+    profiles:
+      - init
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        USER="$$(echo "$$NEO4J_AUTH" | cut -d'/' -f1)"
+        PASS="$$(echo "$$NEO4J_AUTH" | cut -d'/' -f2)"
+        echo ">> Esperando cypher-shell..."
+        # Ejecutar scripts en orden si existen
+        for f in /scripts/*.cypher; do
+          if [ -f "$$f" ]; then
+            echo ">> Ejecutando $$(basename \"$$f\")"
+              /var/lib/neo4j/bin/cypher-shell -a bolt://$$NEO4J_HOST:${NEO4J_BOLT_PORT:-7687} -u "$$USER" -p "$$PASS" --file "$$f"
+          fi
+        done
+
+volumes:
+  neo4j_sales_data:
+    name: neo4j_sales_data
+  neo4j_sales_logs:
+    name: neo4j_sales_logs
+  neo4j_sales_plugins:
+    name: neo4j_sales_plugins
+  neo4j_sales_import:
+    name: neo4j_sales_import
+
+networks:
+  sales_net:
+    name: sales_net
+    driver: bridge
+    external: true

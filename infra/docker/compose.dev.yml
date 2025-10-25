@@ -35,23 +35,22 @@ services:
       - mysql-init
       - init
 
-  # MongoDB (placeholder - implementar cuando esté listo)
-  # mongo_sales:
-  #   extends:
-  #     file: ./databases/mongo/compose.yaml
-  #     service: mongo_sales
-  #   profiles:
-  #     - mongo
-  #     - all
+  # Neo4j
+  neo4j_sales:
+    extends:
+      file: ./databases/neo4j/compose.yaml
+      service: neo4j
+    profiles:
+      - neo4j
+      - all
 
-  # Neo4j (placeholder - implementar cuando esté listo)
-  # neo4j_sales:
-  #   extends:
-  #     file: ./databases/neo4j/compose.yaml
-  #     service: neo4j_sales
-  #   profiles:
-  #     - neo4j
-  #     - all
+  neo4j_init:
+    extends:
+      file: ./databases/neo4j/compose.yaml
+      service: init_neo4j
+    profiles:
+      - neo4j-init
+      - init
 
 networks:
   sales_net:
@@ -64,3 +63,11 @@ volumes:
     name: mssql_sales_data
   mysql_sales_data:
     name: mysql_sales_data
+  neo4j_sales_data:
+    name: neo4j_sales_data
+  neo4j_sales_logs:
+    name: neo4j_sales_logs
+  neo4j_sales_plugins:
+    name: neo4j_sales_plugins
+  neo4j_sales_import:
+    name: neo4j_sales_import

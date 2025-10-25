@@ -76,7 +76,6 @@ Opciones:
 Bases de datos disponibles:
   mssql      Microsoft SQL Server
   mysql      MySQL 8.x
-  mongo      MongoDB
   neo4j      Neo4j
   all        Todas las bases de datos (default)
 
@@ -199,12 +198,12 @@ main() {
                 show_help
                 exit 0
                 ;;
-            mssql|mysql|mongo|neo4j)
+            mssql|mysql|neo4j)
                 databases+=("$1")
                 shift
                 ;;
             all)
-                databases=(mssql mysql mongo neo4j)
+                databases=(mssql mysql neo4j)
                 shift
                 ;;
             *)
@@ -217,7 +216,7 @@ main() {
 
     # Si no se especificaron bases de datos, usar todas
     if [[ ${#databases[@]} -eq 0 ]]; then
-        databases=(mssql mysql mongo neo4j)
+        databases=(mssql mysql neo4j)
     fi
 
     # Verificaciones iniciales
