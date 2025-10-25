@@ -187,6 +187,8 @@ NEO4J_BOLT_PORT=7687
 
 ### 2. Levantar bases de datos
 
+#### Linux/macOS
+
 Usa el script `dev_up.sh` para gestionar las bases de datos de desarrollo:
 
 ```bash
@@ -216,6 +218,45 @@ Usa el script `dev_up.sh` para gestionar las bases de datos de desarrollo:
 
 # Ver ayuda completa
 ./scripts/dev_up.sh --help
+```
+
+#### Windows (PowerShell)
+
+Usa el script `dev_up.ps1` para gestionar las bases de datos de desarrollo:
+
+```powershell
+# Levantar todas las bases de datos disponibles
+.\scripts\dev_up.ps1
+
+# Levantar todas las bases de datos (explícito)
+.\scripts\dev_up.ps1 -Up all
+
+# Levantar solo MSSQL
+.\scripts\dev_up.ps1 -Up mssql
+
+# Reinicializar MSSQL (borra datos existentes y vuelve a crear)
+.\scripts\dev_up.ps1 -Init mssql
+
+# Reinicializar MySQL
+.\scripts\dev_up.ps1 -Init mysql
+
+# Reinicializar todas las bases de datos
+.\scripts\dev_up.ps1 -Init all
+
+# Detener todas las bases de datos
+.\scripts\dev_up.ps1 -Down all
+
+# Ver logs de MySQL
+.\scripts\dev_up.ps1 -Logs mysql
+
+# Ver ayuda completa
+.\scripts\dev_up.ps1 -Help
+```
+
+**Nota para Windows**: Si es la primera vez que ejecutas scripts PowerShell, abre PowerShell como administrador y ejecuta:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 ### Bases de datos disponibles
