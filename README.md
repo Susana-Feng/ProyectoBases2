@@ -178,6 +178,11 @@ MYSQL_ROOT_PASS=YourStrong@Passw0rd1
 MYSQL_USER=sales_user
 MYSQL_PASS=sales_pass_123
 MYSQL_PORT=3306
+
+# Neo4j
+NEO4J_AUTH=neo4j/ChangeMe123!
+NEO4J_HTTP_PORT=7474
+NEO4J_BOLT_PORT=7687
 ```
 
 ### 2. Levantar bases de datos
@@ -215,10 +220,11 @@ Usa el script `dev_up.sh` para gestionar las bases de datos de desarrollo:
 
 ### Bases de datos disponibles
 
-- **MSSQL**: Microsoft SQL Server 2022 con base de datos `DB_SALES` y esquema `dbo`
+- **MSSQL**: Microsoft SQL Server 2022 con base de datos `DB_SALES` y esquema `sales_ms`
 - **MySQL**: MySQL 8.x con base de datos `DB_SALES`
-- **MongoDB**: MongoDB (próximamente)
-- **Neo4j**: Neo4j (próximamente)
+- **Neo4j**: Neo4j con base de datos `db-sales`
+- **MongoDB**: MongoDB Atlas (externo)
+- **PostgreSQL**: Supabase (externo)
 
 ## Desarrollo
 
