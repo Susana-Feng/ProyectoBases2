@@ -3,23 +3,23 @@ import * as XLSX from 'xlsx';
 import { app } from '../../index';
 
 describe('Upload Route', () => {
-  const BASE_URL = 'http://localhost:3000';
+  const BASE_URL = 'http://localhost:3001';
   let server: ReturnType<typeof Bun.serve> | null = null;
 
   // Start server before all tests
   beforeAll(() => {
     server = Bun.serve({
-      port: 3000,
+      port: 3001,
       fetch: app.fetch,
     });
-    console.log('Test server started on port 3000');
+    console.log('Test server started on port 3001');
   });
 
   // Stop server after all tests
   afterAll(() => {
     if (server) {
       server.stop();
-      console.log('Test server stopped');
+      console.log('Test server stopped (port 3001)');
     }
   });
 

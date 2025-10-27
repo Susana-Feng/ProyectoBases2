@@ -17,7 +17,7 @@ const ErrorResponseSchema = z.object({
   success: z.boolean().openapi({ example: false }),
   message: z.string().openapi({ example: 'Failed to process Excel data' }),
   error: z.string().optional().openapi({ 
-    example: 'Cliente with email "invalid@email.com" not found' 
+    example: 'Cliente with correo "invalid@email.com" not found' 
   }),
 }).openapi('ErrorResponse');
 
@@ -26,8 +26,8 @@ export const uploadExcelRoute = createRoute({
   method: 'post',
   path: '/excel',
   tags: ['Upload'],
-  summary: 'Upload Excel file',
-  description: 'Upload an Excel file (.xlsx or .xls) with data to insert into the database. The Excel file can contain sheets for Cliente, Producto, Orden, and OrdenDetalle.',
+  summary: 'Upload Excel file to MySQL',
+  description: `Upload an Excel file (.xlsx or .xls) with data to insert into MySQL database.`,
   request: {
     body: {
       content: {
