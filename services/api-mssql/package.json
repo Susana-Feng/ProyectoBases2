@@ -26,7 +26,6 @@
     "@hono/swagger-ui": "^0.5.2",
     "@hono/zod-openapi": "^1.1.4",
     "@hono/zod-validator": "^0.7.4",
-    "@prisma/adapter-mssql": "^6.18.0",
     "@prisma/client": "^6.18.0",
     "hono": "^4.10.3",
     "xlsx": "^0.18.5",

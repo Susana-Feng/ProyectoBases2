@@ -1,8 +1,27 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import * as XLSX from 'xlsx';
+import { app } from '../../index';
 
 describe('Upload Route', () => {
   const BASE_URL = 'http://localhost:3000';
+  let server: ReturnType<typeof Bun.serve> | null = null;
+
+  // Start server before all tests
+  beforeAll(() => {
+    server = Bun.serve({
+      port: 3000,
+      fetch: app.fetch,
+    });
+    console.log('Test server started on port 3000');
+  });
+
+  // Stop server after all tests
+  afterAll(() => {
+    if (server) {
+      server.stop();
+      console.log('Test server stopped');
+    }
+  });
 
   test('should reject non-Excel files', async () => {
     const formData = new FormData();
