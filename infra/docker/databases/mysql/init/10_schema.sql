@@ -2,7 +2,7 @@
  Script para crear el esquema en MySQL
  Base de datos: DB_SALES
  Heterogeneidades:
- - Género: ENUM('M','F', 'X')
+ - Género: ENUM('M','F', 'X') Default 'M'
  - Moneda: Puede ser 'USD' o 'CRC' unicamente
  - Canal: libre (no controlado)
  - Fechas: Almacenadas como VARCHAR
@@ -19,7 +19,7 @@ CREATE TABLE Cliente (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(120) NOT NULL COMMENT 'Nombre completo del cliente',
     correo VARCHAR(150) UNIQUE COMMENT 'Correo electrónico único del cliente',
-    genero ENUM('M', 'F', 'X') NOT NULL COMMENT 'Género del cliente (M=Masculino, F=Femenino, X=Otro)',
+    genero ENUM('M', 'F', 'X') DEFAULT 'M' COMMENT 'Género del cliente (M=Masculino, F=Femenino, X=Otro). Default M',
     pais VARCHAR(60) NOT NULL COMMENT 'País de residencia del cliente',
     created_at VARCHAR(10) NOT NULL COMMENT 'Fecha de registro en formato VARCHAR (YYYY-MM-DD)'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -39,9 +39,9 @@ CREATE TABLE Orden (
     id INT AUTO_INCREMENT PRIMARY KEY,
     cliente_id INT NOT NULL COMMENT 'Identificador del cliente (FK)',
     fecha VARCHAR(19) NOT NULL COMMENT 'Fecha y hora de la orden en formato VARCHAR (YYYY-MM-DD HH:MM:SS)',
-    canal VARCHAR(20) NOT NULL COMMENT 'Canal de venta (WEB, TIENDA, APP)',
+    canal VARCHAR(20) NOT NULL COMMENT 'Canal de venta (libre, no controlado - valores como WEB, TIENDA, APP, etc.)',
     moneda ENUM('USD', 'CRC') NOT NULL COMMENT 'Moneda de la orden (USD o CRC solamente)',
-    total VARCHAR(20) NOT NULL COMMENT 'Monto total de la orden en VARCHAR (puede ser 1200.50 o 1,200.50)',
+    total VARCHAR(20) NOT NULL COMMENT 'Monto total de la orden en VARCHAR (puede tener formato 1200.50 o 1,200.50)',
     FOREIGN KEY (cliente_id) REFERENCES Cliente(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     INDEX IX_Orden_cliente (cliente_id),
     INDEX IX_Orden_fecha (fecha)
@@ -54,7 +54,7 @@ CREATE TABLE OrdenDetalle (
     orden_id INT NOT NULL COMMENT 'Identificador de la orden (FK)',
     producto_id INT NOT NULL COMMENT 'Identificador del producto (FK)',
     cantidad INT NOT NULL COMMENT 'Cantidad de unidades del producto',
-    precio_unit VARCHAR(20) NOT NULL COMMENT 'Precio unitario en VARCHAR (puede ser 100.50 o 100,50)', -- string con comas/puntos
+    precio_unit VARCHAR(20) NOT NULL COMMENT 'Precio unitario en VARCHAR (puede tener formato 100.50 o 100,50)',
     FOREIGN KEY (orden_id) REFERENCES Orden(id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (producto_id) REFERENCES Producto(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     INDEX IX_OrdenDetalle_orden (orden_id),
