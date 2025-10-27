@@ -140,3 +140,12 @@ vite.config.ts.timestamp-*
 
 # Turborepo
 .turbo
+
+# Generated data files
+data/samples/**/*.csv
+data/samples/**/*.xlsx
+data/staging/**/*
+data/raw/**/*
+!data/samples/.gitkeep
+!data/staging/.gitkeep
+!data/raw/.gitkeep
