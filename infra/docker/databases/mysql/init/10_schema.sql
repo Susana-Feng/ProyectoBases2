@@ -4,9 +4,11 @@
  Heterogeneidades:
  - Género: ENUM('M','F', 'X')
  - Moneda: Puede ser 'USD' o 'CRC' unicamente
+ - Canal: libre (no controlado)
  - Fechas: Almacenadas como VARCHAR
  - Montos: Almacenados como VARCHAR, a veces '1200.50' o '1,200.50'
- - Código Producto: 'codigo_alt' (no es el SKU oficial)
+ - Código Producto: 'codigo_alt' código alterno (no coincide
+con SKU oficial)
 ================================================================
 */
 
@@ -52,7 +54,7 @@ CREATE TABLE OrdenDetalle (
     orden_id INT NOT NULL COMMENT 'Identificador de la orden (FK)',
     producto_id INT NOT NULL COMMENT 'Identificador del producto (FK)',
     cantidad INT NOT NULL COMMENT 'Cantidad de unidades del producto',
-    precio_unit VARCHAR(20) NOT NULL COMMENT 'Precio unitario en VARCHAR (puede ser 100.50 o 100,50)',
+    precio_unit VARCHAR(20) NOT NULL COMMENT 'Precio unitario en VARCHAR (puede ser 100.50 o 100,50)', -- string con comas/puntos
     FOREIGN KEY (orden_id) REFERENCES Orden(id) ON DELETE CASCADE ON UPDATE CASCADE,
     FOREIGN KEY (producto_id) REFERENCES Producto(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     INDEX IX_OrdenDetalle_orden (orden_id),
