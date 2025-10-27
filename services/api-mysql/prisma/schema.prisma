@@ -14,10 +14,10 @@ datasource db {
 model Cliente {
   id         Int      @id @default(autoincrement())
   nombre     String   @db.VarChar(120)
-  correo     String?  @unique @db.VarChar(150)
-  genero     String   @default("M") @db.VarChar(1) // ENUM('M','F','X') DEFAULT 'M' en MySQL
+  correo     String?  @db.VarChar(150)
+  genero     Genero   @default(M)
   pais       String   @db.VarChar(60)
-  created_at String   @db.VarChar(10) // Fecha almacenada como VARCHAR (YYYY-MM-DD) NOT NULL
+  created_at String   @db.VarChar(10) // YYYY-MM-DD
 
   // Relaciones
   ordenes    Orden[]
@@ -25,10 +25,17 @@ model Cliente {
   @@map("Cliente")
 }
 
+// ENUM para género
+enum Genero {
+  M
+  F
+  X
+}
+
 // ========= TABLA DE PRODUCTOS =========
 model Producto {
   id         Int      @id @default(autoincrement())
-  codigo_alt String   @unique @db.VarChar(64) // Código alternativo (NO es SKU oficial) - heterogeneidad
+  codigo_alt String   @unique @db.VarChar(64)
   nombre     String   @db.VarChar(150)
   categoria  String   @db.VarChar(80)
 
@@ -42,18 +49,23 @@ model Producto {
 model Orden {
   id         Int      @id @default(autoincrement())
   cliente_id Int
-  fecha      String   @db.VarChar(19) // Fecha almacenada como VARCHAR (YYYY-MM-DD HH:MM:SS) NOT NULL
-  canal      String   @db.VarChar(20) // Canal libre (no controlado) NOT NULL
-  moneda     String   @db.VarChar(3) // ENUM('USD','CRC') en MySQL NOT NULL
-  total      String   @db.VarChar(20) // Monto almacenado como VARCHAR (puede ser '1200.50' o '1,200.50') NOT NULL
+  fecha      String   @db.VarChar(19) // YYYY-MM-DD HH:MM:SS
+  canal      String   @db.VarChar(20)
+  moneda     String   @db.Char(3) // USD o CRC
+  total      String   @db.VarChar(20)
 
   // Relaciones
-  cliente    Cliente  @relation(fields: [cliente_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  cliente    Cliente  @relation(fields: [cliente_id], references: [id])
   detalles   OrdenDetalle[]
 
   @@index([cliente_id], name: "IX_Orden_cliente")
-  @@index([fecha], name: "IX_Orden_fecha")
   @@map("Orden")
+}
+
+// ENUM para moneda (validación en TypeScript)
+enum Moneda {
+  USD
+  CRC
 }
 
 // ========= TABLA DE DETALLE DE ÓRDENES =========
@@ -62,14 +74,12 @@ model OrdenDetalle {
   orden_id    Int
   producto_id Int
   cantidad    Int
-  precio_unit String   @db.VarChar(20) // Precio almacenado como VARCHAR (puede ser '100.50' o '100,50') - heterogeneidad
+  precio_unit String   @db.VarChar(20)
 
   // Relaciones
-  orden       Orden    @relation(fields: [orden_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  producto    Producto @relation(fields: [producto_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  orden       Orden    @relation(fields: [orden_id], references: [id])
+  producto    Producto @relation(fields: [producto_id], references: [id])
 
-  @@unique([orden_id, producto_id], name: "UQ_Orden_Producto")
-  @@index([orden_id], name: "IX_OrdenDetalle_orden")
-  @@index([producto_id], name: "IX_OrdenDetalle_producto")
+  @@index([producto_id], name: "IX_Detalle_producto")
   @@map("OrdenDetalle")
 }
