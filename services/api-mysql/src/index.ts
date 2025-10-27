@@ -36,14 +36,14 @@ app.route('/upload', uploadRoutes);
 app.doc('/openapi.json', {
   openapi: '3.1.0',
   info: {
-    title: 'Excel to MSSQL API',
+    title: 'Excel to MySQL API',
     version: '1.0.0',
-    description: 'API para procesar archivos Excel e insertarlos en SQL Server usando Prisma ORM',
+    description: `API para procesar archivos Excel e insertarlos en MySQL usando Prisma ORM.`,
   },
   servers: [
     {
-      url: 'http://localhost:3000',
-      description: 'Development server',
+      url: 'http://localhost:3001',
+      description: 'MySQL Development server',
     },
   ],
   tags: [
@@ -91,7 +91,7 @@ app.onError((err, c) => {
 export { app };
 
 // Start server
-const port = parseInt(Bun.env.PORT || process.env.PORT || '3000');
+const port = parseInt(Bun.env.PORT || process.env.PORT || '3001');
 
 console.log(`🚀 Server starting on port ${port}...`);
 
