@@ -1,0 +1,71 @@
+// Prisma schema for MS SQL Server
+// Based on DB_SALES database schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// ========= TABLA DE CLIENTES =========
+model Cliente {
+  ClienteId      Int      @id @default(autoincrement())
+  Nombre         String   @db.NVarChar(120)
+  Email          String?  @unique @db.NVarChar(150)
+  Genero         String?  @db.NVarChar(12)
+  Pais           String   @db.NVarChar(60)
+  FechaRegistro  DateTime @default(now()) @db.Date
+
+  // Relaciones
+  ordenes        Orden[]
+
+  @@map("Cliente")
+}
+
+// ========= TABLA DE PRODUCTOS =========
+model Producto {
+  ProductoId     Int      @id @default(autoincrement())
+  SKU            String   @unique @db.NVarChar(40)
+  Nombre         String   @db.NVarChar(150)
+  Categoria      String   @db.NVarChar(80)
+
+  // Relaciones
+  ordenDetalles  OrdenDetalle[]
+
+  @@map("Producto")
+}
+
+// ========= TABLA DE ÓRDENES =========
+model Orden {
+  OrdenId        Int      @id @default(autoincrement())
+  ClienteId      Int
+  Fecha          DateTime @default(now()) @db.DateTime2
+  Canal          String   @db.NVarChar(20)
+  Moneda         String   @default("USD") @db.Char(3)
+  Total          Decimal  @db.Decimal(18, 2)
+
+  // Relaciones
+  cliente        Cliente  @relation(fields: [ClienteId], references: [ClienteId], onDelete: NoAction, onUpdate: NoAction)
+  detalles       OrdenDetalle[]
+
+  @@map("Orden")
+}
+
+// ========= TABLA DE DETALLE DE ÓRDENES =========
+model OrdenDetalle {
+  OrdenDetalleId Int      @id @default(autoincrement())
+  OrdenId        Int
+  ProductoId     Int
+  Cantidad       Int
+  PrecioUnit     Decimal  @db.Decimal(18, 2)
+  DescuentoPct   Decimal? @db.Decimal(5, 2)
+
+  // Relaciones
+  orden          Orden    @relation(fields: [OrdenId], references: [OrdenId], onDelete: NoAction, onUpdate: NoAction)
+  producto       Producto @relation(fields: [ProductoId], references: [ProductoId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("OrdenDetalle")
+}

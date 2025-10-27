@@ -1,0 +1,35 @@
+{
+  "name": "api-mssql",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "version": "1.0.0",
+  "description": "API Excel to MSSQL with Bun, Hono and Prisma",
+  "author": "<REMOVED_BCCR_NAME>",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "db:generate": "bunx prisma generate",
+    "db:push": "bunx prisma db push",
+    "db:studio": "bunx prisma studio"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prisma": "^6.18.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@hono/swagger-ui": "^0.5.2",
+    "@hono/zod-openapi": "^1.1.4",
+    "@hono/zod-validator": "^0.7.4",
+    "@prisma/adapter-mssql": "^6.18.0",
+    "@prisma/client": "^6.18.0",
+    "hono": "^4.10.3",
+    "xlsx": "^0.18.5",
+    "zod": "^4.1.12"
+  }
+}
