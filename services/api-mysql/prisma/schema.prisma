@@ -1,0 +1,75 @@
+// Prisma schema for MySQL
+// Based on DB_SALES database schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ========= TABLA DE CLIENTES =========
+model Cliente {
+  id         Int      @id @default(autoincrement())
+  nombre     String   @db.VarChar(120)
+  correo     String?  @unique @db.VarChar(150)
+  genero     String   @default("M") @db.VarChar(1) // ENUM('M','F','X') DEFAULT 'M' en MySQL
+  pais       String   @db.VarChar(60)
+  created_at String   @db.VarChar(10) // Fecha almacenada como VARCHAR (YYYY-MM-DD) NOT NULL
+
+  // Relaciones
+  ordenes    Orden[]
+
+  @@map("Cliente")
+}
+
+// ========= TABLA DE PRODUCTOS =========
+model Producto {
+  id         Int      @id @default(autoincrement())
+  codigo_alt String   @unique @db.VarChar(64) // Código alternativo (NO es SKU oficial) - heterogeneidad
+  nombre     String   @db.VarChar(150)
+  categoria  String   @db.VarChar(80)
+
+  // Relaciones
+  ordenDetalles  OrdenDetalle[]
+
+  @@map("Producto")
+}
+
+// ========= TABLA DE ÓRDENES =========
+model Orden {
+  id         Int      @id @default(autoincrement())
+  cliente_id Int
+  fecha      String   @db.VarChar(19) // Fecha almacenada como VARCHAR (YYYY-MM-DD HH:MM:SS) NOT NULL
+  canal      String   @db.VarChar(20) // Canal libre (no controlado) NOT NULL
+  moneda     String   @db.VarChar(3) // ENUM('USD','CRC') en MySQL NOT NULL
+  total      String   @db.VarChar(20) // Monto almacenado como VARCHAR (puede ser '1200.50' o '1,200.50') NOT NULL
+
+  // Relaciones
+  cliente    Cliente  @relation(fields: [cliente_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  detalles   OrdenDetalle[]
+
+  @@index([cliente_id], name: "IX_Orden_cliente")
+  @@index([fecha], name: "IX_Orden_fecha")
+  @@map("Orden")
+}
+
+// ========= TABLA DE DETALLE DE ÓRDENES =========
+model OrdenDetalle {
+  id          Int      @id @default(autoincrement())
+  orden_id    Int
+  producto_id Int
+  cantidad    Int
+  precio_unit String   @db.VarChar(20) // Precio almacenado como VARCHAR (puede ser '100.50' o '100,50') - heterogeneidad
+
+  // Relaciones
+  orden       Orden    @relation(fields: [orden_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  producto    Producto @relation(fields: [producto_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([orden_id, producto_id], name: "UQ_Orden_Producto")
+  @@index([orden_id], name: "IX_OrdenDetalle_orden")
+  @@index([producto_id], name: "IX_OrdenDetalle_producto")
+  @@map("OrdenDetalle")
+}
