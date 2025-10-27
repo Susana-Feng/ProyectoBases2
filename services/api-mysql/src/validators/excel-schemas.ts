@@ -3,8 +3,8 @@ import { z } from 'zod';
 // Schema for Cliente sheet
 export const clienteSchema = z.object({
   nombre: z.string().min(1).max(120),
-  correo: z.string().email().max(150).optional(),
-  genero: z.enum(['M', 'F', 'X']).default('M'), // DEFAULT 'M' in MySQL
+  correo: z.string().email().max(150).optional(), // NOT UNIQUE - duplicates allowed
+  genero: z.enum(['M', 'F', 'X']).default('M'), // ENUM with DEFAULT 'M' in MySQL
   pais: z.string().min(1).max(60),
   created_at: z.union([z.date(), z.string()]).optional(), // Will use current date if not provided
 });
@@ -18,10 +18,12 @@ export const productoSchema = z.object({
 
 // Schema for Orden sheet
 export const ordenSchema = z.object({
-  correo: z.string().email(), // For finding cliente
+  correo: z.string().email(), // Associates to Cliente by correo:
+                               // 1. First tries to find in the same Excel (uses last match if duplicates)
+                               // 2. If not found in Excel, searches DB (uses last inserted cliente)
   fecha: z.union([z.date(), z.string()]).optional(), // Will use current datetime if not provided
   canal: z.string().min(1).max(20), // Canal is free text, not controlled (heterogeneidad)
-  moneda: z.enum(['USD', 'CRC']).default('USD'), // ENUM in MySQL, default to USD if not provided
+  moneda: z.enum(['USD', 'CRC']).default('USD'), // CHAR(3) in MySQL, default to USD if not provided
   total: z.union([z.number(), z.string()]).transform((val) => {
     // Handle both number and string (with or without commas)
     if (typeof val === 'number') return String(val);

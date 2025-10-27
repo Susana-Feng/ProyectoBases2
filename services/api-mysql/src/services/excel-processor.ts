@@ -84,46 +84,28 @@ export async function processExcelData(excelData: ExcelData): Promise<ProcessRes
     // Increase timeout for large Excel files (default is 5000ms)
     await prisma.$transaction(async (tx) => {
       // Step 1: Process Clientes (if exists)
+      // Map to track correo -> cliente_id for Ordenes in the same Excel
       const correoToClienteId = new Map<string, number>();
       
       if (validatedData.Cliente && validatedData.Cliente.length > 0) {
         for (const cliente of validatedData.Cliente) {
-          let result;
+          // Correo is NOT UNIQUE in MySQL - always create new cliente
+          const result = await tx.cliente.create({
+            data: {
+              nombre: cliente.nombre,
+              correo: cliente.correo || null,
+              genero: cliente.genero, // ENUM('M','F','X') DEFAULT 'M'
+              pais: cliente.pais,
+              created_at: cliente.created_at 
+                ? formatDateForMySQL(cliente.created_at, false)
+                : formatDateForMySQL(new Date(), false),
+            },
+          });
           
-          // Only use upsert if correo exists (unique field)
+          // Store mapping for ordenes (if duplicate correos in Excel, last one wins)
+          // This allows Ordenes to reference Clientes from the same Excel file
           if (cliente.correo) {
-            result = await tx.cliente.upsert({
-              where: { correo: cliente.correo },
-              update: {
-                nombre: cliente.nombre,
-                genero: cliente.genero, // Has default 'M' from Zod, NOT NULL in DB
-                pais: cliente.pais,
-              },
-              create: {
-                nombre: cliente.nombre,
-                correo: cliente.correo,
-                genero: cliente.genero, // Has default 'M' from Zod, NOT NULL in DB
-                pais: cliente.pais,
-                created_at: cliente.created_at 
-                  ? formatDateForMySQL(cliente.created_at, false)
-                  : formatDateForMySQL(new Date(), false),
-              },
-            });
-            
             correoToClienteId.set(cliente.correo, result.id);
-          } else {
-            // If no correo, just create (can't upsert without unique field)
-            result = await tx.cliente.create({
-              data: {
-                nombre: cliente.nombre,
-                correo: null,
-                genero: cliente.genero, // Has default 'M' from Zod, NOT NULL in DB
-                pais: cliente.pais,
-                created_at: cliente.created_at 
-                  ? formatDateForMySQL(cliente.created_at, false)
-                  : formatDateForMySQL(new Date(), false),
-              },
-            });
           }
           
           clientesInsertados++;
@@ -161,13 +143,16 @@ export async function processExcelData(excelData: ExcelData): Promise<ProcessRes
           const orden = validatedData.Orden[i];
           if (!orden) continue;
           
-          // Get cliente_id by correo
+          // Strategy to find cliente_id by correo:
+          // 1. First, check if cliente exists in the same Excel (from map)
           let clienteId = correoToClienteId.get(orden.correo);
           
-          // If not in our map, search in database
+          // 2. If not in Excel, search in database (uses last inserted cliente with this correo)
+          //    This allows uploading Orden-only Excel files that reference existing Clientes
           if (!clienteId) {
-            const cliente = await tx.cliente.findUnique({
+            const cliente = await tx.cliente.findFirst({
               where: { correo: orden.correo },
+              orderBy: { id: 'desc' }, // Get most recent cliente with this correo
             });
             
             if (!cliente) {
@@ -178,7 +163,7 @@ export async function processExcelData(excelData: ExcelData): Promise<ProcessRes
             }
             
             clienteId = cliente.id;
-            correoToClienteId.set(orden.correo, clienteId);
+            correoToClienteId.set(orden.correo, clienteId); // Cache for subsequent ordenes
           }
 
           const result = await tx.orden.create({
@@ -187,9 +172,9 @@ export async function processExcelData(excelData: ExcelData): Promise<ProcessRes
               fecha: orden.fecha 
                 ? formatDateForMySQL(orden.fecha, true)
                 : formatDateForMySQL(new Date(), true),
-              canal: orden.canal,
-              moneda: orden.moneda, // Has default 'USD' from Zod, NOT NULL in DB
-              total: orden.total,
+              canal: orden.canal, // Free text, not controlled
+              moneda: orden.moneda, // 'USD' or 'CRC'
+              total: orden.total, // VARCHAR - can be '1200.50' or '1,200.50'
             },
           });
           
@@ -202,7 +187,7 @@ export async function processExcelData(excelData: ExcelData): Promise<ProcessRes
       // Step 4: Process OrdenDetalle (if exists)
       if (validatedData.OrdenDetalle && validatedData.OrdenDetalle.length > 0) {
         for (const detalle of validatedData.OrdenDetalle) {
-          // Get orden id from our map
+          // Get orden id from map
           const ordenId = ordenIndexToOrdenId.get(detalle.OrdenIndex);
           
           if (!ordenId) {
@@ -215,7 +200,7 @@ export async function processExcelData(excelData: ExcelData): Promise<ProcessRes
           // Get producto id by codigo_alt
           let productoId = codigoAltToProductoId.get(detalle.codigo_alt);
           
-          // If not in our map, search in database
+          // If not in map, search database
           if (!productoId) {
             const producto = await tx.producto.findUnique({
               where: { codigo_alt: detalle.codigo_alt },
@@ -232,12 +217,13 @@ export async function processExcelData(excelData: ExcelData): Promise<ProcessRes
             codigoAltToProductoId.set(detalle.codigo_alt, productoId);
           }
 
+          // Note: No UNIQUE constraint on (orden_id, producto_id) - duplicates allowed
           await tx.ordenDetalle.create({
             data: {
               orden_id: ordenId,
               producto_id: productoId,
               cantidad: detalle.cantidad,
-              precio_unit: detalle.precio_unit,
+              precio_unit: detalle.precio_unit, // VARCHAR - can be '100.50' or '100,50'
             },
           });
           

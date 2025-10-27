@@ -101,20 +101,20 @@ describe('Excel Processor', () => {
       expect(result.stats?.detallesInsertados).toBe(0);
 
       // Verify data was inserted
-      const cliente = await prisma.cliente.findUnique({
+      const cliente = await prisma.cliente.findFirst({
         where: { correo: 'juan.test@example.com' },
       });
       expect(cliente).toBeDefined();
       expect(cliente?.nombre).toBe('Juan Test');
     });
 
-    test('should upsert existing Cliente by correo', async () => {
-      // Insert first time
+    test('should allow duplicate correo (correo is NOT unique)', async () => {
+      // Insert first cliente
       const excelData1: ExcelData = {
         Cliente: [
           {
             nombre: 'Original Name',
-            correo: 'upsert.test@example.com',
+            correo: 'duplicate.test@example.com',
             genero: 'M',
             pais: 'Original Country',
           },
@@ -122,14 +122,14 @@ describe('Excel Processor', () => {
       };
       await processExcelData(excelData1);
 
-      // Update with same correo
+      // Insert second cliente with same correo (should NOT update, should create new)
       const excelData2: ExcelData = {
         Cliente: [
           {
-            nombre: 'Updated Name',
-            correo: 'upsert.test@example.com',
+            nombre: 'Second Name',
+            correo: 'duplicate.test@example.com',
             genero: 'F',
-            pais: 'Updated Country',
+            pais: 'Second Country',
           },
         ],
       };
@@ -137,13 +137,14 @@ describe('Excel Processor', () => {
 
       expect(result.success).toBe(true);
 
-      // Verify only one record exists with updated data
+      // Verify TWO records exist with same correo (duplicates allowed)
       const clientes = await prisma.cliente.findMany({
-        where: { correo: 'upsert.test@example.com' },
+        where: { correo: 'duplicate.test@example.com' },
+        orderBy: { id: 'asc' },
       });
-      expect(clientes).toHaveLength(1);
-      expect(clientes[0]!.nombre).toBe('Updated Name');
-      expect(clientes[0]!.pais).toBe('Updated Country');
+      expect(clientes).toHaveLength(2);
+      expect(clientes[0]!.nombre).toBe('Original Name');
+      expect(clientes[1]!.nombre).toBe('Second Name');
     });
 
     test('should process Cliente without correo', async () => {
@@ -330,7 +331,7 @@ describe('Excel Processor', () => {
       const finalCount = await prisma.cliente.count();
       expect(finalCount).toBe(initialCount);
 
-      const cliente = await prisma.cliente.findUnique({
+      const cliente = await prisma.cliente.findFirst({
         where: { correo: 'rollback@example.com' },
       });
       expect(cliente).toBeNull();
