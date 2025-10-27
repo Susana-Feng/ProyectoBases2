@@ -87,6 +87,9 @@ app.onError((err, c) => {
   );
 });
 
+// Export app for testing
+export { app };
+
 // Start server
 const port = parseInt(Bun.env.PORT || process.env.PORT || '3000');
 
