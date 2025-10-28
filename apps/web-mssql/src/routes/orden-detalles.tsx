@@ -19,7 +19,8 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 import type { ColumnConfig } from "@/components/data-table";
 import { DataTable } from "@/components/data-table";
-import { fetchOrdenDetalles } from "@/lib/api";
+import { RelatedDataCell } from "@/components/related-data-cell";
+import { fetchOrdenDetalles, fetchOrdenData, fetchProductoData } from "@/lib/api";
 import type { OrdenDetalle, PaginationMeta } from "@/types/api";
 
 export default function OrdenDetallesPage() {
@@ -44,7 +45,7 @@ export default function OrdenDetallesPage() {
   const columns: ColumnConfig[] = [
     {
       key: "OrdenDetalleId",
-      label: "ID",
+      label: "Identificador",
       sortable: true,
       minWidth: 60,
       maxWidth: 80,
@@ -52,32 +53,64 @@ export default function OrdenDetallesPage() {
     },
     {
       key: "OrdenId",
-      label: "Orden ID",
+      label: "Orden",
       sortable: true,
       minWidth: 80,
       maxWidth: 100,
       priority: 2,
+      render: (value: number) => (
+        <RelatedDataCell
+          id={value}
+          title="Detalles de la orden"
+          fetchFn={fetchOrdenData}
+          displayFields={[
+            { key: "OrdenId", label: "Identificador" },
+            { key: "ClienteId", label: "Cliente" },
+            { key: "Fecha", label: "Fecha" },
+            { key: "Canal", label: "Canal" },
+            { key: "Moneda", label: "Moneda" },
+            { key: "Total", label: "Total" },
+          ]}
+        />
+      ),
     },
     {
       key: "ProductoId",
-      label: "Producto ID",
+      label: "Producto",
       sortable: true,
       minWidth: 90,
       maxWidth: 120,
       priority: 3,
+      render: (value: number) => (
+        <RelatedDataCell
+          id={value}
+          title="Detalles del producto"
+          fetchFn={fetchProductoData}
+          displayFields={[
+            { key: "ProductoId", label: "Identificador" },
+            { key: "SKU", label: "Código SKU" },
+            { key: "Nombre", label: "Nombre" },
+            { key: "Categoria", label: "Categoría" },
+          ]}
+        />
+      ),
     },
     {
       key: "Cantidad",
       label: "Cantidad",
       sortable: true,
+      filterable: true,
+      filterType: "number",
       minWidth: 70,
       maxWidth: 90,
       priority: 4,
     },
     {
       key: "PrecioUnit",
-      label: "Precio Unitario",
+      label: "Precio unitario",
       sortable: true,
+      filterable: true,
+      filterType: "number",
       minWidth: 100,
       maxWidth: 130,
       priority: 5,
@@ -90,6 +123,8 @@ export default function OrdenDetallesPage() {
       key: "DescuentoPct",
       label: "Descuento %",
       sortable: true,
+      filterable: true,
+      filterType: "number",
       minWidth: 90,
       maxWidth: 110,
       priority: 6,
@@ -112,6 +147,12 @@ export default function OrdenDetallesPage() {
         sortOrder: sortOrder,
         ordenId: debouncedFilters.OrdenId ? parseInt(debouncedFilters.OrdenId) : undefined,
         productoId: debouncedFilters.ProductoId ? parseInt(debouncedFilters.ProductoId) : undefined,
+        cantidadMin: debouncedFilters.Cantidad_min ? parseInt(debouncedFilters.Cantidad_min) : undefined,
+        cantidadMax: debouncedFilters.Cantidad_max ? parseInt(debouncedFilters.Cantidad_max) : undefined,
+        precioUnitMin: debouncedFilters.PrecioUnit_min ? parseFloat(debouncedFilters.PrecioUnit_min) : undefined,
+        precioUnitMax: debouncedFilters.PrecioUnit_max ? parseFloat(debouncedFilters.PrecioUnit_max) : undefined,
+        descuentoMin: debouncedFilters.DescuentoPct_min ? parseFloat(debouncedFilters.DescuentoPct_min) : undefined,
+        descuentoMax: debouncedFilters.DescuentoPct_max ? parseFloat(debouncedFilters.DescuentoPct_max) : undefined,
       });
 
       setData(response.data);
@@ -135,7 +176,7 @@ export default function OrdenDetallesPage() {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-foreground">Detalles de Órdenes</h1>
+        <h1 className="text-3xl font-bold text-foreground">Detalles de órdenes</h1>
         <p className="text-muted-foreground mt-2">
           Gestiona y visualiza todos los detalles de órdenes en la base de datos
         </p>

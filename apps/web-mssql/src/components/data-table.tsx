@@ -37,6 +37,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { DateRangePicker } from "@/components/date-range-picker";
+import { NumericRangeInput } from "@/components/numeric-range-input";
 import type { PaginationMeta } from "@/types/api";
 
 
@@ -45,7 +47,10 @@ export interface ColumnConfig {
   label: string;
   sortable?: boolean;
   filterable?: boolean;
+  filterType?: "text" | "number" | "date" | "select"; // Type of filter
+  filterOptions?: { label: string; value: string }[]; // For select filters
   format?: (value: any) => string;
+  render?: (value: any) => React.ReactNode;
   width?: string;
   minWidth?: number; // in pixels
   maxWidth?: number; // in pixels
@@ -220,7 +225,7 @@ export function DataTable({
                   <PopoverTrigger asChild>
                     <div className="flex items-center gap-2">
                       <span className="truncate">{column.label}</span>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         {hasFilter && (
                           <div className="w-2 h-2 bg-primary rounded-full"></div>
                         )}
@@ -228,7 +233,7 @@ export function DataTable({
                       </div>
                     </div>
                   </PopoverTrigger>
-                  <PopoverContent className="w-64 p-3" align="start">
+                  <PopoverContent className="w-72 p-3" align="start">
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium">Filtrar {column.label}</span>
@@ -243,22 +248,77 @@ export function DataTable({
                           </Button>
                         )}
                       </div>
-                      <Input
-                        placeholder={`Buscar ${column.label.toLowerCase()}...`}
-                        value={filters[column.key] || ""}
-                        onChange={(e) => {
-                          if (onFilterChange) {
-                            onFilterChange(column.key, e.target.value);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
+                      
+                      {column.filterType === "select" && column.filterOptions ? (
+                        <Select
+                          value={filters[column.key] || ""}
+                          onValueChange={(value) => {
+                            if (onFilterChange) {
+                              onFilterChange(column.key, value);
+                            }
                             setOpenFilterColumn(null);
-                          }
-                        }}
-                        className="h-8"
-                        autoFocus
-                      />
+                          }}
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue placeholder={`Seleccionar ${column.label.toLowerCase()}...`} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {column.filterOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : column.filterType === "number" ? (
+                        <NumericRangeInput
+                          minValue={filters[`${column.key}_min`]}
+                          maxValue={filters[`${column.key}_max`]}
+                          onMinChange={(value) => {
+                            if (onFilterChange) {
+                              onFilterChange(`${column.key}_min`, value);
+                            }
+                          }}
+                          onMaxChange={(value) => {
+                            if (onFilterChange) {
+                              onFilterChange(`${column.key}_max`, value);
+                            }
+                          }}
+                          onEnter={() => setOpenFilterColumn(null)}
+                        />
+                      ) : column.filterType === "date" ? (
+                        <DateRangePicker
+                          dateFrom={filters[`${column.key}_desde`]}
+                          dateTo={filters[`${column.key}_hasta`]}
+                          onDateFromChange={(date) => {
+                            if (onFilterChange) {
+                              onFilterChange(`${column.key}_desde`, date);
+                            }
+                          }}
+                          onDateToChange={(date) => {
+                            if (onFilterChange) {
+                              onFilterChange(`${column.key}_hasta`, date);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <Input
+                          placeholder={`Buscar ${column.label.toLowerCase()}...`}
+                          value={filters[column.key] || ""}
+                          onChange={(e) => {
+                            if (onFilterChange) {
+                              onFilterChange(column.key, e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              setOpenFilterColumn(null);
+                            }
+                          }}
+                          className="h-8"
+                          autoFocus
+                        />
+                      )}
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -312,11 +372,17 @@ export function DataTable({
       return (
         <TableRow key={rowKey} className="hover:bg-muted/30 h-12">
           {visibleColumnsArray.map((column) => {
-            const value = column.format
-              ? column.format(row[column.key])
-              : String(row[column.key] || "");
+            const rawValue = row[column.key];
+            const value = column.render
+              ? column.render(rawValue)
+              : column.format
+              ? column.format(rawValue)
+              : String(rawValue || "");
+            
             const width = columnWidths[column.key];
-            const shouldTruncate = width && value.length * 8 > width - 32; // Account for padding
+            const isCustomRender = column.render !== undefined;
+            const valueStr = typeof value === "string" ? value : "";
+            const shouldTruncate = !isCustomRender && width && valueStr.length * 8 > width - 32; // Account for padding
             
             return (
               <TableCell 
@@ -327,7 +393,9 @@ export function DataTable({
                   minWidth: width ? `${width}px` : 'auto'
                 }}
               >
-                {shouldTruncate ? (
+                {isCustomRender ? (
+                  <div>{value}</div>
+                ) : shouldTruncate ? (
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -336,7 +404,7 @@ export function DataTable({
                         </span>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-xs">
-                        <p className="break-words">{value}</p>
+                        <p className="wrap-break-word">{value}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -370,7 +438,7 @@ export function DataTable({
                 }}
               >
                 <SelectTrigger className="w-48">
-                  <ArrowUpDown className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <ArrowUpDown className="h-4 w-4 mr-2 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <SelectValue placeholder="Ordenar por..." className="block truncate text-left" />
                   </div>

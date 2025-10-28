@@ -19,7 +19,8 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 import type { ColumnConfig } from "@/components/data-table";
 import { DataTable } from "@/components/data-table";
-import { fetchOrdenes } from "@/lib/api";
+import { RelatedDataCell } from "@/components/related-data-cell";
+import { fetchOrdenes, fetchClienteData } from "@/lib/api";
 import type { Orden, PaginationMeta } from "@/types/api";
 
 export default function OrdenesPage() {
@@ -45,7 +46,7 @@ export default function OrdenesPage() {
   const columns: ColumnConfig[] = [
     {
       key: "OrdenId",
-      label: "ID",
+      label: "Identificador",
       sortable: true,
       minWidth: 60,
       maxWidth: 80,
@@ -53,16 +54,33 @@ export default function OrdenesPage() {
     },
     {
       key: "ClienteId",
-      label: "Cliente ID",
+      label: "Cliente",
       sortable: true,
       minWidth: 80,
       maxWidth: 100,
       priority: 2,
+      render: (value: number) => (
+        <RelatedDataCell
+          id={value}
+          title="Detalles del cliente"
+          fetchFn={fetchClienteData}
+          displayFields={[
+            { key: "ClienteId", label: "Identificador" },
+            { key: "Nombre", label: "Nombre" },
+            { key: "Email", label: "Correo electrónico" },
+            { key: "Pais", label: "País" },
+            { key: "Genero", label: "Género" },
+            { key: "FechaRegistro", label: "Fecha de registro" },
+          ]}
+        />
+      ),
     },
     {
       key: "Fecha",
       label: "Fecha",
       sortable: true,
+      filterable: true,
+      filterType: "date",
       minWidth: 100,
       maxWidth: 120,
       priority: 3,
@@ -73,6 +91,7 @@ export default function OrdenesPage() {
       label: "Canal",
       sortable: true,
       filterable: true,
+      filterType: "text",
       minWidth: 80,
       maxWidth: 120,
       priority: 4,
@@ -82,6 +101,13 @@ export default function OrdenesPage() {
       label: "Moneda",
       sortable: true,
       filterable: true,
+      filterType: "select",
+      filterOptions: [
+        { label: "USD", value: "USD" },
+        { label: "EUR", value: "EUR" },
+        { label: "MXN", value: "MXN" },
+        { label: "COP", value: "COP" },
+      ],
       minWidth: 70,
       maxWidth: 90,
       priority: 6,
@@ -90,6 +116,8 @@ export default function OrdenesPage() {
       key: "Total",
       label: "Total",
       sortable: true,
+      filterable: true,
+      filterType: "number",
       minWidth: 90,
       maxWidth: 120,
       priority: 5,
@@ -112,6 +140,10 @@ export default function OrdenesPage() {
         clienteId: debouncedFilters.ClienteId ? parseInt(debouncedFilters.ClienteId) : undefined,
         canal: debouncedFilters.Canal || undefined,
         moneda: debouncedFilters.Moneda || undefined,
+        fechaDesde: debouncedFilters.Fecha_desde || undefined,
+        fechaHasta: debouncedFilters.Fecha_hasta || undefined,
+        totalMin: debouncedFilters.Total_min ? parseFloat(debouncedFilters.Total_min) : undefined,
+        totalMax: debouncedFilters.Total_max ? parseFloat(debouncedFilters.Total_max) : undefined,
       });
 
       setData(response.data);

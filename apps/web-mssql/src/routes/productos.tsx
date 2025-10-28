@@ -45,7 +45,7 @@ export default function ProductosPage() {
   const columns: ColumnConfig[] = [
     {
       key: "ProductoId",
-      label: "ID",
+      label: "Identificador",
       sortable: true,
       minWidth: 60,
       maxWidth: 80,
@@ -53,9 +53,10 @@ export default function ProductosPage() {
     },
     {
       key: "SKU",
-      label: "SKU",
+      label: "Código SKU",
       sortable: true,
       filterable: true,
+      filterType: "text",
       minWidth: 100,
       maxWidth: 150,
       priority: 3,
@@ -65,6 +66,7 @@ export default function ProductosPage() {
       label: "Nombre",
       sortable: true,
       filterable: true,
+      filterType: "text",
       minWidth: 150,
       maxWidth: 300,
       priority: 2,
@@ -74,6 +76,7 @@ export default function ProductosPage() {
       label: "Categoría",
       sortable: true,
       filterable: true,
+      filterType: "text",
       minWidth: 120,
       maxWidth: 180,
       priority: 4,

@@ -40,9 +40,14 @@ export async function fetchClientes(params: {
   page?: number;
   limit?: number;
   nombre?: string;
+  nombreExact?: boolean;
   email?: string;
+  emailExact?: boolean;
   pais?: string;
+  paisExact?: boolean;
   genero?: string;
+  fechaRegistroDesde?: string;
+  fechaRegistroHasta?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 }): Promise<ListResponse<Cliente>> {
@@ -67,8 +72,11 @@ export async function fetchProductos(params: {
   page?: number;
   limit?: number;
   nombre?: string;
+  nombreExact?: boolean;
   sku?: string;
+  skuExact?: boolean;
   categoria?: string;
+  categoriaExact?: boolean;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 }): Promise<ListResponse<Producto>> {
@@ -94,9 +102,15 @@ export async function fetchOrdenes(params: {
   limit?: number;
   clienteId?: number;
   canal?: string;
+  canalExact?: boolean;
   moneda?: string;
   fechaDesde?: string;
   fechaHasta?: string;
+  totalMin?: number;
+  totalMax?: number;
+  totalGt?: number;
+  totalLt?: number;
+  totalEq?: number;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 }): Promise<ListResponse<Orden>> {
@@ -122,6 +136,21 @@ export async function fetchOrdenDetalles(params: {
   limit?: number;
   ordenId?: number;
   productoId?: number;
+  cantidadMin?: number;
+  cantidadMax?: number;
+  cantidadGt?: number;
+  cantidadLt?: number;
+  cantidadEq?: number;
+  precioUnitMin?: number;
+  precioUnitMax?: number;
+  precioUnitGt?: number;
+  precioUnitLt?: number;
+  precioUnitEq?: number;
+  descuentoMin?: number;
+  descuentoMax?: number;
+  descuentoGt?: number;
+  descuentoLt?: number;
+  descuentoEq?: number;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
 }): Promise<ListResponse<OrdenDetalle>> {
@@ -152,4 +181,70 @@ export async function uploadExcelFile(file: File): Promise<UploadResponse> {
   });
 
   return handleResponse<UploadResponse>(response);
+}
+
+// Helper functions for fetching related data with caching
+const relationshipCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(type: string, id: number): string {
+  return `${type}:${id}`;
+}
+
+function getFromCache(key: string): any | null {
+  const cached = relationshipCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    return cached.data;
+  }
+  relationshipCache.delete(key);
+  return null;
+}
+
+function setInCache(key: string, data: any): void {
+  relationshipCache.set(key, { data, timestamp: Date.now() });
+}
+
+// Fetch Cliente with caching
+export async function fetchClienteData(
+  id: number
+): Promise<SingleResponse<Cliente>> {
+  const cacheKey = getCacheKey("cliente", id);
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    return { success: true, data: cached };
+  }
+
+  const response = await fetchClienteById(id);
+  setInCache(cacheKey, response.data);
+  return response;
+}
+
+// Fetch Producto with caching
+export async function fetchProductoData(
+  id: number
+): Promise<SingleResponse<Producto>> {
+  const cacheKey = getCacheKey("producto", id);
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    return { success: true, data: cached };
+  }
+
+  const response = await fetchProductoById(id);
+  setInCache(cacheKey, response.data);
+  return response;
+}
+
+// Fetch Orden with caching
+export async function fetchOrdenData(
+  id: number
+): Promise<SingleResponse<Orden>> {
+  const cacheKey = getCacheKey("orden", id);
+  const cached = getFromCache(cacheKey);
+  if (cached) {
+    return { success: true, data: cached };
+  }
+
+  const response = await fetchOrdenById(id);
+  setInCache(cacheKey, response.data);
+  return response;
 }
