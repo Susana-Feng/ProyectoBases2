@@ -3,6 +3,10 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { swaggerUI } from '@hono/swagger-ui';
 import uploadRoutes from './routes/upload';
+import clientesRoutes from './routes/clientes';
+import productosRoutes from './routes/productos';
+import ordenesRoutes from './routes/ordenes';
+import ordenDetallesRoutes from './routes/orden-detalles';
 import { rootRoute, healthRoute } from './routes/health.openapi';
 
 // Create OpenAPI Hono app
@@ -16,7 +20,7 @@ app.use('*', cors());
 app.openapi(rootRoute, (c) => {
   return c.json({
     success: true,
-    message: 'API Excel to MSSQL is running',
+    message: 'API Excel to MySQL is running',
     version: '1.0.0',
   });
 });
@@ -30,7 +34,11 @@ app.openapi(healthRoute, (c) => {
 });
 
 // Routes
-app.route('/upload', uploadRoutes);
+app.route('/api/v1/upload', uploadRoutes);
+app.route('/api/v1/clientes', clientesRoutes);
+app.route('/api/v1/productos', productosRoutes);
+app.route('/api/v1/ordenes', ordenesRoutes);
+app.route('/api/v1/orden-detalles', ordenDetallesRoutes);
 
 // OpenAPI documentation
 app.doc('/openapi.json', {
@@ -50,6 +58,10 @@ app.doc('/openapi.json', {
     {
       name: 'Upload',
       description: 'Endpoints para subir y procesar archivos Excel',
+    },
+    {
+      name: 'Data',
+      description: 'Endpoints para leer datos de clientes, productos, órdenes y detalles de órdenes',
     },
     {
       name: 'Health',

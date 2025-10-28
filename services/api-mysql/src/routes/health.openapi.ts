@@ -10,7 +10,7 @@ const HealthResponseSchema = z.object({
 // Schema for root response
 const RootResponseSchema = z.object({
   success: z.boolean().openapi({ example: true }),
-  message: z.string().openapi({ example: 'API Excel to MSSQL is running' }),
+  message: z.string().openapi({ example: 'API Excel to MySQL is running' }),
   version: z.string().openapi({ example: '1.0.0' }),
 }).openapi('RootResponse');
 
