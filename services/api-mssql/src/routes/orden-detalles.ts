@@ -21,6 +21,66 @@ ordenDetalles.openapi(listOrdenDetallesRoute, async (c) => {
     if (validated.productoId) {
       where.ProductoId = validated.productoId;
     }
+    
+    // Cantidad numeric filters
+    if (validated.cantidadMin || validated.cantidadMax || validated.cantidadGt || validated.cantidadLt || validated.cantidadEq) {
+      where.Cantidad = {};
+      if (validated.cantidadMin) {
+        where.Cantidad.gte = validated.cantidadMin;
+      }
+      if (validated.cantidadMax) {
+        where.Cantidad.lte = validated.cantidadMax;
+      }
+      if (validated.cantidadGt) {
+        where.Cantidad.gt = validated.cantidadGt;
+      }
+      if (validated.cantidadLt) {
+        where.Cantidad.lt = validated.cantidadLt;
+      }
+      if (validated.cantidadEq) {
+        where.Cantidad.equals = validated.cantidadEq;
+      }
+    }
+    
+    // PrecioUnit numeric filters
+    if (validated.precioUnitMin || validated.precioUnitMax || validated.precioUnitGt || validated.precioUnitLt || validated.precioUnitEq) {
+      where.PrecioUnit = {};
+      if (validated.precioUnitMin) {
+        where.PrecioUnit.gte = validated.precioUnitMin;
+      }
+      if (validated.precioUnitMax) {
+        where.PrecioUnit.lte = validated.precioUnitMax;
+      }
+      if (validated.precioUnitGt) {
+        where.PrecioUnit.gt = validated.precioUnitGt;
+      }
+      if (validated.precioUnitLt) {
+        where.PrecioUnit.lt = validated.precioUnitLt;
+      }
+      if (validated.precioUnitEq) {
+        where.PrecioUnit.equals = validated.precioUnitEq;
+      }
+    }
+    
+    // DescuentoPct numeric filters
+    if (validated.descuentoMin || validated.descuentoMax || validated.descuentoGt || validated.descuentoLt || validated.descuentoEq) {
+      where.DescuentoPct = {};
+      if (validated.descuentoMin) {
+        where.DescuentoPct.gte = validated.descuentoMin;
+      }
+      if (validated.descuentoMax) {
+        where.DescuentoPct.lte = validated.descuentoMax;
+      }
+      if (validated.descuentoGt) {
+        where.DescuentoPct.gt = validated.descuentoGt;
+      }
+      if (validated.descuentoLt) {
+        where.DescuentoPct.lt = validated.descuentoLt;
+      }
+      if (validated.descuentoEq) {
+        where.DescuentoPct.equals = validated.descuentoEq;
+      }
+    }
 
     // Build order by
     const orderBy: any = {};

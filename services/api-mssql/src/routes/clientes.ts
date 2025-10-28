@@ -16,16 +16,33 @@ clientes.openapi(listClientesRoute, async (c) => {
     const where: any = {};
     
     if (validated.nombre) {
-      where.Nombre = { contains: validated.nombre };
+      where.Nombre = validated.nombreExact === 'true' 
+        ? { equals: validated.nombre }
+        : { contains: validated.nombre };
     }
     if (validated.email) {
-      where.Email = { contains: validated.email };
+      where.Email = validated.emailExact === 'true'
+        ? { equals: validated.email }
+        : { contains: validated.email };
     }
     if (validated.pais) {
-      where.Pais = { contains: validated.pais };
+      where.Pais = validated.paisExact === 'true'
+        ? { equals: validated.pais }
+        : { contains: validated.pais };
     }
     if (validated.genero) {
       where.Genero = { contains: validated.genero };
+    }
+    
+    // Date range filters
+    if (validated.fechaRegistroDesde || validated.fechaRegistroHasta) {
+      where.FechaRegistro = {};
+      if (validated.fechaRegistroDesde) {
+        where.FechaRegistro.gte = new Date(validated.fechaRegistroDesde);
+      }
+      if (validated.fechaRegistroHasta) {
+        where.FechaRegistro.lte = new Date(validated.fechaRegistroHasta);
+      }
     }
 
     // Build order by

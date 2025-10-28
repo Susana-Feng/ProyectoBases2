@@ -19,7 +19,9 @@ ordenes.openapi(listOrdenesRoute, async (c) => {
       where.ClienteId = validated.clienteId;
     }
     if (validated.canal) {
-      where.Canal = { contains: validated.canal };
+      where.Canal = validated.canalExact === 'true'
+        ? { equals: validated.canal }
+        : { contains: validated.canal };
     }
     if (validated.moneda) {
       where.Moneda = { contains: validated.moneda };
@@ -31,6 +33,26 @@ ordenes.openapi(listOrdenesRoute, async (c) => {
       }
       if (validated.fechaHasta) {
         where.Fecha.lte = new Date(validated.fechaHasta);
+      }
+    }
+    
+    // Total field numeric filters
+    if (validated.totalMin || validated.totalMax || validated.totalGt || validated.totalLt || validated.totalEq) {
+      where.Total = {};
+      if (validated.totalMin) {
+        where.Total.gte = validated.totalMin;
+      }
+      if (validated.totalMax) {
+        where.Total.lte = validated.totalMax;
+      }
+      if (validated.totalGt) {
+        where.Total.gt = validated.totalGt;
+      }
+      if (validated.totalLt) {
+        where.Total.lt = validated.totalLt;
+      }
+      if (validated.totalEq) {
+        where.Total.equals = validated.totalEq;
       }
     }
 

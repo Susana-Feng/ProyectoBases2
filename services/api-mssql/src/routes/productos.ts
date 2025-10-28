@@ -16,13 +16,19 @@ productos.openapi(listProductosRoute, async (c) => {
     const where: any = {};
     
     if (validated.nombre) {
-      where.Nombre = { contains: validated.nombre };
+      where.Nombre = validated.nombreExact === 'true'
+        ? { equals: validated.nombre }
+        : { contains: validated.nombre };
     }
     if (validated.sku) {
-      where.SKU = { contains: validated.sku };
+      where.SKU = validated.skuExact === 'true'
+        ? { equals: validated.sku }
+        : { contains: validated.sku };
     }
     if (validated.categoria) {
-      where.Categoria = { contains: validated.categoria };
+      where.Categoria = validated.categoriaExact === 'true'
+        ? { equals: validated.categoria }
+        : { contains: validated.categoria };
     }
 
     // Build order by
