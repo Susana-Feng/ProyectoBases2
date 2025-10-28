@@ -5,6 +5,22 @@ export interface PaginationQuery {
   sortOrder?: 'asc' | 'desc';
 }
 
+export interface NumericFilterOperator {
+  gt?: number;  // greater than
+  gte?: number; // greater than or equal
+  lt?: number;  // less than
+  lte?: number; // less than or equal
+  eq?: number;  // equal
+  ne?: number;  // not equal
+}
+
+export interface DateFilterOperator {
+  gt?: string;  // greater than
+  gte?: string; // greater than or equal
+  lt?: string;  // less than
+  lte?: string; // less than or equal
+}
+
 export interface PaginationMetadata {
   page: number;
   limit: number;

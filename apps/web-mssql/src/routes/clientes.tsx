@@ -46,7 +46,7 @@ export default function ClientesPage() {
   const columns: ColumnConfig[] = [
     {
       key: "ClienteId",
-      label: "ID",
+      label: "Identificador",
       sortable: true,
       minWidth: 60,
       maxWidth: 80,
@@ -57,15 +57,17 @@ export default function ClientesPage() {
       label: "Nombre",
       sortable: true,
       filterable: true,
+      filterType: "text",
       minWidth: 120,
       maxWidth: 250,
       priority: 2,
     },
     {
       key: "Email",
-      label: "Email",
+      label: "Correo electrónico",
       sortable: true,
       filterable: true,
+      filterType: "text",
       minWidth: 150,
       maxWidth: 300,
       priority: 3,
@@ -75,6 +77,12 @@ export default function ClientesPage() {
       label: "Género",
       sortable: true,
       filterable: true,
+      filterType: "select",
+      filterOptions: [
+        { label: "Masculino", value: "Masculino" },
+        { label: "Femenino", value: "Femenino" },
+        { label: "Otro", value: "Otro" },
+      ],
       minWidth: 80,
       maxWidth: 120,
       priority: 5,
@@ -85,14 +93,17 @@ export default function ClientesPage() {
       label: "País",
       sortable: true,
       filterable: true,
+      filterType: "text",
       minWidth: 100,
       maxWidth: 150,
       priority: 4,
     },
     {
       key: "FechaRegistro",
-      label: "Fecha de Registro",
+      label: "Fecha de registro",
       sortable: true,
+      filterable: true,
+      filterType: "date",
       minWidth: 120,
       maxWidth: 140,
       priority: 6,
@@ -113,6 +124,8 @@ export default function ClientesPage() {
         email: debouncedFilters.Email || undefined,
         pais: debouncedFilters.Pais || undefined,
         genero: debouncedFilters.Genero || undefined,
+        fechaRegistroDesde: debouncedFilters.FechaRegistro_desde || undefined,
+        fechaRegistroHasta: debouncedFilters.FechaRegistro_hasta || undefined,
       });
 
       setData(response.data);
