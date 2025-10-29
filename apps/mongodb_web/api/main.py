@@ -21,8 +21,6 @@ app.add_middleware(
 async def startup_event():
     # initialize and store mongo client for reuse
     app.state.mongo_client = get_mongo_client()
-    # optional: store a specific db handle
-    # app.state.db = app.state.mongo_client["your_db_name"]
 
 
 @app.on_event("shutdown")
@@ -41,4 +39,4 @@ app.include_router(orders_router)
 
 @app.get("/")
 async def root():
-    return {"message": "Hola"}
+    return {"message": "Ready MongoDB"}
