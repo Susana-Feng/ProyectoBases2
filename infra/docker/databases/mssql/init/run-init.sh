@@ -19,6 +19,9 @@ run_sql() {
   "$SQLCMD" -b -C -S "$HOST" -U sa -P "$PASS" -i "$f"
 }
 
-[ -f /scripts/00_create_db.sql ] && run_sql /scripts/00_create_db.sql
-[ -f /scripts/10_schema.sql ] && run_sql /scripts/10_schema.sql
+# Ejecutar todos los .sql en orden alfabético (00_*, 10_*, 20_*, 30_* ...)
+for f in $(ls -1 /scripts/*.sql 2>/dev/null | sort); do
+  run_sql "$f"
+done
+
 echo ">> init_sales OK"
