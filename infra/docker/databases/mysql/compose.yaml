@@ -45,9 +45,8 @@ services:
       - /bin/bash
       - -lc
       - |
-        mysql -h $$MYSQL_HOST -u root -p$$MYSQL_ROOT_PASS < /scripts/00_create_db.sql
-        mysql -h $$MYSQL_HOST -u root -p$$MYSQL_ROOT_PASS DB_SALES < /scripts/10_schema.sql
-        mysql -h $$MYSQL_HOST -u root -p$$MYSQL_ROOT_PASS DB_SALES < /scripts/20_seed_data.sql
+        find /scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+        bash /scripts/run-init.sh
 
 volumes:
   mysql_sales_data:
