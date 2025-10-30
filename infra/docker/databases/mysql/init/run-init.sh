@@ -15,8 +15,12 @@ run_sql() {
   fi
 }
 
-[ -f /scripts/00_create_db.sql ] && run_sql /scripts/00_create_db.sql
-[ -f /scripts/10_schema.sql ] && run_sql /scripts/10_schema.sql DB_SALES
-[ -f /scripts/20_seed_data.sql ] && run_sql /scripts/20_seed_data.sql DB_SALES
+# Ejecutar 00_database.sql sin contexto de DB
+[ -f /scripts/00_database.sql ] && run_sql /scripts/00_database.sql
+
+# Ejecutar todos los demás .sql en orden alfabético contra DB_SALES
+for f in $(ls -1 /scripts/*.sql 2>/dev/null | grep -v "00_database" | sort); do
+  run_sql "$f" DB_SALES
+done
 
 echo ">> init_sales OK"

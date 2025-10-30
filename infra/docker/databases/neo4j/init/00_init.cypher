@@ -1,5 +1,4 @@
 // Migrado desde Scripts/Neo4j/crearNodos.Cypher
-
 // ============================
 // LIMPIEZA DE BASE DE DATOS
 // ============================
