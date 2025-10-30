@@ -59,6 +59,7 @@ CREATE TABLE stg.tipo_cambio (
   a     CHAR(3)    NOT NULL,                       -- 'USD' (target DW)
   tasa  DECIMAL(18,6) NOT NULL,                    -- monto en 'a' por 1 unidad de 'de'
   fuente NVARCHAR(64) NULL,                        -- e.g. 'BCCR WS'
+  LoadTS DATETIME2(3) NOT NULL DEFAULT SYSDATETIME(), -- auditoría
   CONSTRAINT PK_tipo_cambio PRIMARY KEY (fecha, de, a)
 );
 
