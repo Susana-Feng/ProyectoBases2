@@ -42,17 +42,20 @@ services/
 ### 1) API Mongo (FastAPI)
 
 ```powershell
-cd services/api-mongo
-python -m venv .venv
+python -m venv venv
 source venv/bin/activate      # Linux / Mac
 venv\Scripts\activate         # Windows
-# crear .env a partir de .env.example si aplica
+pip install -r requirements.txt
+```
+Crea un archivo .env con tus credenciales siguiendo como referencia los archivos .env.example respectivos de cada base
+
+Luego ejecutar el servidor:
+```powershell
 uvicorn main:app --reload
 ```
-
 Endpoints de ejemplo:
-- API: http://127.0.0.1:8000/ventas/
-- Swagger: http://127.0.0.1:8000/docs
+- API: http://localhost:8000
+- Swagger Docs: http://localhost:8000/docs
 
 **Nota:** En caso de querer reiniciar el entorno de Python, ejecute:
 ```bash

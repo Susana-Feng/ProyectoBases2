@@ -3,14 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from config.database import get_mongo_client
 
 from routers.orders import router as orders_router
-
+from routers.clients import router as clientes_router
+from routers.products import router as productos_router
 
 app = FastAPI(title="MongoDB Web API")
 
-# CORS — adjust origins for your frontend in development
+# CORS 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:4000"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,7 +36,8 @@ async def shutdown_event():
 
 # Include routers (each router can have its own prefix)
 app.include_router(orders_router)
-
+app.include_router(clientes_router)
+app.include_router(productos_router)
 
 @app.get("/")
 async def root():
