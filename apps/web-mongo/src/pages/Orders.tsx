@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  TableCaption,
-} from "@/components/ui/table";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableCaption } from "@/components/ui/table";
 import DarkToggle from "@/components/DarkToggle";
 import { ArrowBigLeftDash, ArrowBigRightDash } from 'lucide-react';
+import { EditOrderDialog } from "@/components/EditOrderDialog";
+import { CreateOrderDialog } from "@/components/CreateOrderDialog";
 
 type Item = {
   producto_id: string;
@@ -41,6 +35,18 @@ export default function Orders() {
   const [skip, setSkip] = useState<number>(0);
   const [limit, setLimit] = useState<number>(10);
   const [total, setTotal] = useState<number | null>(null);
+  const [editingOrder, setEditingOrder] = useState<any | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [hasMore, setHasMore] = useState<boolean>(false);
+
+  // Pagination helpers
+  // Compute pagination display. If backend `total` exists but is smaller than
+  // the number of items we currently have (could be inconsistent), use at
+  // least `skip + orders.length` so the page count doesn't shrink unexpectedly.
+  const currentPage = limit > 0 ? Math.floor(skip / limit) + 1 : 1;
+  const knownTotal = typeof total === "number" ? Math.max(total, skip + orders.length) : undefined;
+  const totalPages = typeof knownTotal === "number" && limit > 0 ? Math.max(1, Math.ceil(knownTotal / limit)) : undefined;
 
   // Cachés para no repetir peticiones
   const clienteCache = new Map<string, any>();
@@ -112,6 +118,73 @@ export default function Orders() {
     }
   }
 
+  // Eliminar productos por ID
+  async function deleteProducto(o: any) {
+    try {
+      const res = await fetch(`${rutaBase}/${o._id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadOrders(skip, limit);
+      } catch (err: any) {
+      setError(err.message || String(err));
+    }
+  }
+
+  async function editOrder(o: any) {
+    setEditingOrder(o);
+    setDialogOpen(true);
+  }
+
+  async function handleSave(edited: any) {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const res = await fetch(`${rutaBase}/${edited._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(edited),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+
+      await loadOrders(skip, limit);
+    } catch (err: any) {
+      setError(err?.message || String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Crear nueva orden
+  async function handleCreate(newOrder: any) {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const res = await fetch(rutaBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newOrder),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+
+      await loadOrders(skip, limit);
+    } catch (err: any) {
+      setError(err?.message || String(err));
+    } finally {
+      setLoading(false);
+      setCreateDialogOpen(false);
+    }
+  }
+
+
   // Cargar todas las órdenes
   async function loadOrders(skipArg?: number, limitArg?: number) {
     setLoading(true);
@@ -119,17 +192,22 @@ export default function Orders() {
     try {
       const s = typeof skipArg === "number" ? skipArg : skip;
       const l = typeof limitArg === "number" ? limitArg : limit;
-      const url = `${rutaBase}/?skip=${s}&limit=${l}`;
+      // fetch one extra item to detect if there is a next page when backend
+      // does not return a reliable total
+      const url = `${rutaBase}/?skip=${s}&limit=${l + 1}`;
       const data = await fetchJson(url);
-      const list = data?.data ?? data ?? [];
+      const rawList = data?.data ?? data ?? [];
+      const list = Array.isArray(rawList) ? rawList.slice(0, l) : [];
+      const extraCount = Array.isArray(rawList) ? rawList.length : 0;
+      setHasMore(extraCount > l);
 
-      if (typeof data?.total === "number") setTotal(data.total);
-      if (typeof data?.skip === "number") setSkip(data.skip);
-      else setSkip(s);
-      if (typeof data?.limit === "number") setLimit(data.limit);
-      else setLimit(l);
+  if (typeof data?.total === "number") setTotal(data.total);
+  if (typeof data?.skip === "number") setSkip(data.skip);
+  else setSkip(s);
+  // Always keep the UI page size as the requested `l` (we requested l+1 to detect hasMore)
+  setLimit(l);
 
-      const initial = list.map((o: any) => ({ ...o, cliente: null, clienteLoading: true }));
+  const initial = list.map((o: any) => ({ ...o, cliente: null, clienteLoading: true }));
       setOrders(initial);
 
       list.forEach((o: any) => {
@@ -161,23 +239,36 @@ export default function Orders() {
 return (
 
   <div className="p-4  mx-auto bg-neutral-50 dark:bg-neutral-950 w-full h-screen overflow-hidden ">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+      <div className="flex items-center  justify-center mb-4">
+        <h2 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 text-center">
           Órdenes
         </h2>
-        <div className="flex items-center gap-4">
-            <DarkToggle />
-          </div>
-        </div>
 
+        <div className="absolute right-0 mr-9">
+          <DarkToggle />
+        </div>
+        </div>
+        <div>
+          <Button variant="outline" onClick={() => setCreateDialogOpen(true)} disabled={loading} className="mb-4 bg-neutral-400 dark:bg-neutral-800 text-white">
+            Crear Nueva Orden
+          </Button>
+        </div>
       <Table className="bg-neutral-100 dark:bg-neutral-900 rounded-sm ">
         <TableCaption className="text-neutral-600 dark:text-neutral-400 text-center mx-auto">
-        <div className="flex items-center justify-center gap-4">
+  <div className="flex items-center justify-center gap-4">
             <div className="flex items-center gap-2">
             <Button className="bg-neutral-900 dark:bg-neutral-600" size="sm" onClick={() => loadOrders(Math.max(0, skip - limit), limit)} disabled={skip === 0}>
                 <ArrowBigLeftDash className="dark:text-white"/>
             </Button>
-            <Button className="bg-neutral-900 dark:bg-neutral-600" size="sm" onClick={() => loadOrders(skip + limit, limit)} disabled={total !== null && skip + limit >= (total ?? 0)}>
+            {/* Next button: enable when total indicates more pages, or when hasMore is true (we fetched limit+1) */}
+            <Button
+              className="bg-neutral-900 dark:bg-neutral-600"
+              size="sm"
+              onClick={() => loadOrders(skip + limit, limit)}
+              disabled={
+                loading || (typeof total === "number" ? skip + limit >= total : !hasMore)
+              }
+            >
                 <ArrowBigRightDash className="dark:text-white"/>
             </Button>
             </div>
@@ -199,15 +290,17 @@ return (
                 <option value={50}>50</option>
             </select>
             </div>
-            <div className="text-sm text-neutral-700 dark:text-neutral-300">
-            {orders.length > 0 ? (
-                <>
-                Mostrando {skip + 1} - {Math.min(skip + limit, total ?? (skip + orders.length))} de {total ?? "?"}
-                </>
-            ) : (
-                <>No hay resultados</>
-            )}
-            </div>
+      <div className="text-sm text-neutral-700 dark:text-neutral-300">
+      {orders.length > 0 ? (
+        <>
+        {typeof totalPages === "number" && (
+          <span className="ml-3"> Página {currentPage} de {totalPages}</span>
+        )}
+        </>
+      ) : (
+        <>No hay resultados</>
+      )}
+      </div>
         </div>
         </TableCaption>
         <TableHeader >
@@ -288,9 +381,9 @@ return (
               </TableCell>
               <TableCell>
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
-                  onClick={() => console.log("edit", o._id)}
+                  onClick={() => editOrder(o)}
                   className="mr-2 text-neutral-700 dark:text-neutral-300"
                 >
                   Edit
@@ -300,13 +393,7 @@ return (
                   size="sm"
                   onClick={async () => {
                     if (!confirm("Eliminar orden?")) return;
-                    try {
-                      const res = await fetch(`${rutaBase}/${o._id}`, { method: "DELETE" });
-                      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                      await loadOrders(skip, limit);
-                    } catch (err: any) {
-                      setError(err.message || String(err));
-                    }
+                    await deleteProducto(o);
                   }}
                 >
                   Delete
@@ -316,7 +403,21 @@ return (
           ))}
         </TableBody>
       </Table>
-
+    {editingOrder && (
+        <EditOrderDialog
+          order={editingOrder}
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          onSave={handleSave}
+        />
+      )}
+      {createDialogOpen && (
+        <CreateOrderDialog
+          open={createDialogOpen}
+          onClose={() => setCreateDialogOpen(false)}
+          onCreate={handleCreate}
+        />
+      )}
     </div>
   );
 }
