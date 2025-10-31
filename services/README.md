@@ -75,7 +75,7 @@ ui/
 ### 1️⃣ Backend (FastAPI)
 
 ```bash
-cd apps/mongodb_web/api     # o Apps/Neo4j/api o Apps/Supabase/api <--- hacer esto para cada bd
+cd apps/mongodb_web/api     # o apps/neo4j_web/api o apps/supabase_web/api <--- hacer esto para cada bd
 python -m venv venv
 source venv/bin/activate      # Linux / Mac
 venv\Scripts\activate         # Windows
@@ -103,11 +103,12 @@ Remove-Item -Recurse -Force venv
 ```
 ### 2️⃣ Frontend (Vite)
 ```bash
-cd Apps/MongoDB/ui     # o Apps/Neo4j/ui o Apps/Supabase/ui
-npm install
-npm run dev
+cd apps/mongodb_web/ui     # o apps/neo4j_web/ui o apps/supabase_web/ui
+npm install -g pnpm
+pnpm install
+pnpm dev
 ```
 El frontend estará disponible en:
 ```bash
-http://localhost:5173
+http://localhost:5174/
 ```
