@@ -1,114 +1,89 @@
-# FastAPI Web Apps: MongoDB, Neo4j y Supabase Integradas
+# WebApps & WebLoaders APIs
 
-## 🛠 Requisitos previos
+Este README documenta la carpeta `services/` del repo. Dentro encontrarás APIs y utilidades para distintas bases de datos: `api-mongo` (FastAPI + MongoDB), `api-mysql` (Bun + Hono + Prisma) y `api-mssql` (Bun + Hono + Prisma).
 
-- Python 3.10+
+Contenido rápido
+- `services/api-mongo` — API en Python (FastAPI) que expone endpoints para la colección `ordenes`.
+- `services/api-mysql` — API en TypeScript (Bun + Hono + Prisma) para operaciones con MySQL (incluye scripts Prisma).
+- `services/api-mssql` — API en TypeScript (Bun + Hono + Prisma) para MSSQL.
 
-- Node.js 18+
+## Requisitos previos
 
-- MongoDB, Neo4j y Supabase configurados localmente o en la nube
+- Python 3.10+ (para `api-mongo`)
+- Bun (recomendado) o Node.js + npm/yarn (para `api-mysql` y `api-mssql`)
+- MongoDB / MySQL / MSSQL según el servicio que quieras ejecutar
 
-- npm / yarn instalados para el frontend
----
-## 📁 Estructura del proyecto
+## Estructura (resumen)
 ```bash
-Apps/
+services/
+├─ api-mongo/      # FastAPI + PyMongo
+│  ├─ config/
+│  ├─ controllers/
+│  ├─ repositories/
+│  ├─ routers/
+│  ├─ schemas/
+│  ├─ requirements.txt
+│  └─ main.py
 │
-├── MongoDB/
-│ ├── api/ # Backend con FastAPI y conexión a MongoDB
-│ └── ui/ # Frontend con Vite + TypeScript
+├─ api-mysql/      # Bun + Hono + Prisma (MySQL)
+│  ├─ src/
+│  ├─ package.json
+│  └─ prisma/
 │
-├── Neo4j/
-│ ├── api/ # Backend con FastAPI y conexión a Neo4j
-│ └── ui/ # Frontend con Vite + TypeScript
-│
-└── Supabase/
-├── api/ # Backend con FastAPI y conexión a Supabase
-└── ui/ # Frontend con Vite + TypeScript
+└─ api-mssql/      # Bun + Hono + Prisma (MSSQL)
+	├─ src/
+	├─ package.json
+	└─ prisma/
 ```
----
+**Nota:** cada subcarpeta contiene sus propios ejemplos de `.env` si aplica (p. ej. `api-mongo/.env.example`).
 
+## Cómo ejecutar cada servicio
 
-## 🧱 Estructura interna de cada servicio
+### 1) API Mongo (FastAPI)
 
-Cada carpeta `api/` tiene la siguiente estructura:
-```bash
-api/
-├── config/ # Configuración de conexiones y entorno
-├── controllers/ # Lógica de negocio / manejo de peticiones
-├── repositories/ # Operaciones CRUD o queries específicas
-├── routers/ # Rutas (endpoints FastAPI)
-├── schemas/ # Modelos Pydantic para validación de datos
-├── .env # Variables de entorno (URIs, credenciales, etc.)
-├── config.py # Carga de configuración global
-└── main.py # Punto de entrada del servidor FastAPI
-```
-
-Y el frontend `ui/` usa esta estructura:
-```bash
-ui/
-├── public/ # Archivos estáticos
-├── src/ # Componentes, vistas, hooks, contextos, etc.
-├── package.json # Dependencias y scripts de npm
-├── vite.config.ts # Configuración de Vite
-└── tsconfig*.json # Configuración de TypeScript
-```
----
-## ⚙️ Componentes principales
-```bash
-| Componente                               | Descripción                                    |
-|------------------------------------------|------------------------------------------------|
-| **FastAPI**                              | Framework backend rápido y asíncrono en Python |
-| **Vite + TypeScript**                    | Framework frontend moderno para desarrollo SPA |
-| **MongoDB**                              | Base de datos NoSQL de documentos              |
-| **Neo4j**                                | Base de datos de grafos                        |
-| **Supabase**                             | Backend relacional (PostgreSQL + API REST)     |
-| **Uvicorn**                              | Servidor ASGI para ejecutar FastAPI            |
-| **PyMongo**, **Py2Neo**, **Supabase-py** | SDKs oficiales de conexión                     |
-| **Dotenv**                               | Gestión de variables de entorno                |
-```
-
----
-
-## 🧠 Instalación por módulo
-
-### 1️⃣ Backend (FastAPI)
-
-```bash
-cd apps/mongodb_web/api     # o apps/neo4j_web/api o apps/supabase_web/api <--- hacer esto para cada bd
-python -m venv venv
-source venv/bin/activate      # Linux / Mac
-venv\Scripts\activate         # Windows
-
+```powershell
+cd services/api-mongo
+python -m venv .venv
+.venv\Scripts\Activate.ps1    # PowerShell (Windows)
+# o: source .venv/bin/activate  # Linux / macOS
 pip install -r requirements.txt
-```
-
-Crea un archivo .env con tus credenciales siguiendo como referencia los archivos .env.example respectivos de cada base
-
-Luego ejecutar el servidor:
-```bash
+# crear .env a partir de .env.example si aplica
 uvicorn main:app --reload
 ```
-- API: http://localhost:8000
-- Swagger Docs: http://localhost:8000/docs
 
-### Eliminación de entorno
-Si se desea reiniciar todo, correr:
+Endpoints de ejemplo:
+- API: http://127.0.0.1:8000/ventas/
+- Swagger: http://127.0.0.1:8000/docs
+
+**Nota:** En caso de querer reiniciar el entorno de Python, ejecute:
 ```bash
 deactivate
-```
-Y luego 
-```bash
+
 Remove-Item -Recurse -Force venv
 ```
-### 2️⃣ Frontend (Vite)
+### 2) API MySQL (Bun + Hono + Prisma)
+
+Requiere Bun instalado: https://bun.sh
+
 ```bash
-cd apps/mongodb_web/ui     # o apps/neo4j_web/ui o apps/supabase_web/ui
-npm install -g pnpm
-pnpm install
-pnpm dev
+cd services/api-mysql
+bun install        # instala dependencias
+bun run --watch src/index.ts   # o `bun run dev` si está definido
+
+# Prisma (si necesitas generar o aplicar esquema):
+bunx prisma generate
+bunx prisma db push
 ```
-El frontend estará disponible en:
+
+### 3) API MSSQL (Bun + Hono + Prisma)
+
 ```bash
-http://localhost:5174/
+cd services/api-mssql
+bun install
+bun run --watch src/index.ts
+
+# Prisma commands
+bunx prisma generate
+bunx prisma db push
 ```
+
