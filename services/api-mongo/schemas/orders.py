@@ -10,7 +10,6 @@ class Canal(str, Enum):
 
 class Moneda(str, Enum):
     CRC = "CRC"
-    USD = "USD"
 
 # Item schema
 class Item(BaseModel):
