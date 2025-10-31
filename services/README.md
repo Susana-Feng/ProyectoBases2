@@ -44,9 +44,8 @@ services/
 ```powershell
 cd services/api-mongo
 python -m venv .venv
-.venv\Scripts\Activate.ps1    # PowerShell (Windows)
-# o: source .venv/bin/activate  # Linux / macOS
-pip install -r requirements.txt
+source venv/bin/activate      # Linux / Mac
+venv\Scripts\activate         # Windows
 # crear .env a partir de .env.example si aplica
 uvicorn main:app --reload
 ```
