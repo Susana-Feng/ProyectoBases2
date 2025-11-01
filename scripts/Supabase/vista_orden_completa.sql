@@ -1,18 +1,19 @@
-CREATE  VIEW orden_completa
-as
+drop view if exists public.orden_completa;
 
-SELECT o.fecha as fecha,
-o.canal as canal,
-o.moneda as moneda,
-o.total as total,
-d.cantidad as cantidad,
-d.precio_unit as precio_unitario,
-p.nombre as nombre_producto,
-c.nombre as nombre_cliente
-FROM orden AS O
-INNER JOIN orden_detalle AS D
-ON O.orden_id = D.orden_id
-INNER JOIN producto AS P
-ON P.producto_id = D.producto_id
-INNER JOIN cliente AS C
-ON C.cliente_id = O.cliente_id
+create view public.orden_completa as
+select 
+    o.orden_id,
+    o.fecha,
+    o.canal,
+    o.moneda,
+    o.total,
+    d.cantidad,
+    d.precio_unit as precio_unitario,
+    p.producto_id,
+    c.cliente_id, 
+    p.nombre as nombre_producto,
+    c.nombre as nombre_cliente
+from public.orden o
+inner join public.orden_detalle d on o.orden_id = d.orden_id
+inner join public.producto p on p.producto_id = d.producto_id
+inner join public.cliente c on c.cliente_id = o.cliente_id;
