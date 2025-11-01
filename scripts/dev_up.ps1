@@ -40,7 +40,7 @@ $ErrorActionPreference = "Stop"
 # ================================================================
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
-$InfraDir = Join-Path $ProjectRoot "infra" "docker"
+$InfraDir = Join-Path (Join-Path $ProjectRoot "infra") "docker"
 $EnvFile = Join-Path $ProjectRoot ".env.local"
 
 # ================================================================
