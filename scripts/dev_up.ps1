@@ -153,7 +153,7 @@ function Invoke-DockerCompose {
         [string]$Action
     )
     
-    $composeFile = Join-Path $InfraDir "databases" $Database "compose.yaml"
+    $composeFile = "$InfraDir/databases/$Database/compose.yaml"
     
     if (-not (Test-Path $composeFile)) {
         Write-Log "Archivo compose.yaml no encontrado para $Database`: $composeFile" -Type Warning
@@ -161,17 +161,37 @@ function Invoke-DockerCompose {
     }
     
     Write-Log "Ejecutando: docker compose -f $composeFile --env-file $EnvFile $Action" -Type Info
-    
-    try {
-        $output = Invoke-Expression "docker compose -f `"$composeFile`" --env-file `"$EnvFile`" $Action" 2>&1
+
+    $cmd = "docker compose -f `"$composeFile`" --env-file `"$EnvFile`" $Action"
+    Start-Sleep -Seconds 3
+
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = "cmd.exe"
+    $processInfo.Arguments = "/c $cmd"
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    $processInfo.UseShellExecute = $false
+    $processInfo.CreateNoWindow = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processInfo
+    $process.Start() | Out-Null
+    $output = $process.StandardOutput.ReadToEnd() + $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+    $exitCode = $process.ExitCode
+
+    if ($exitCode -eq 0 -or ($output -match "Running|Up|done|Created")) {
         Write-Log "Operación completada para $Database" -Type Success
         return $true
-    }
-    catch {
-        Write-Log "Error en operación para $Database`: $_" -Type Error
+    } else {
+        Write-Log "Error en operación para $Database`: $output" -Type Error
         return $false
     }
 }
+
+
+
+
 
 function Start-Services {
     param(
