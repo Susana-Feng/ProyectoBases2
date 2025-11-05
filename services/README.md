@@ -42,6 +42,7 @@ services/
 ### 1) API Mongo (FastAPI)
 
 ```powershell
+cd services/api-mongo
 python -m venv venv
 source venv/bin/activate      # Linux / Mac
 venv\Scripts\activate         # Windows
