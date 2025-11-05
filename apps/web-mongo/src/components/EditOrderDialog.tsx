@@ -66,7 +66,7 @@ export interface Orden {
   cliente?: Cliente;
 }
 
-const apiBaseUrl = (import.meta && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) || "http://localhost:8000";
+const apiBaseUrl =  "http://localhost:8000/api/mongo";
 
 /* ----------------------------- Props ----------------------------- */
 interface EditOrderDialogProps {
@@ -92,7 +92,7 @@ export function EditOrderDialog({ order, open, onClose, onSave }: EditOrderDialo
     const fetchData = async () => {
       try {
   // request all clientes (no pagination) so the select shows every client
-  const urlClientes = `${apiBaseUrl}/clientes`;
+  const urlClientes = `${apiBaseUrl}/clients`;
         const resClientes = await fetch(urlClientes);
         if (!resClientes.ok) {
           const text = await resClientes.text().catch(() => "");
@@ -110,12 +110,12 @@ export function EditOrderDialog({ order, open, onClose, onSave }: EditOrderDialo
           setClientes(jsonClientes.data ?? jsonClientes ?? []);
         }
 
-  // request all productos (no pagination) so the select shows every product
-  const urlProductos = `${apiBaseUrl}/productos`;
+  // request all products (no pagination) so the select shows every product
+  const urlProductos = `${apiBaseUrl}/products`;
         const resProductos = await fetch(urlProductos);
         if (!resProductos.ok) {
           const text = await resProductos.text().catch(() => "");
-          console.error("Error fetching productos", resProductos.status, text);
+          console.error("Error fetching products", resProductos.status, text);
         } else {
           const ct = resProductos.headers.get("content-type") || "";
           const text = await resProductos.text().catch(() => "");

@@ -4,17 +4,17 @@ from bson.errors import InvalidId
 from config.database import db
 
 
-clientes_collection = db["clientes"]
+clients_collection = db["clientes"]
 
 
-class ClientesRepository:
+class clientsRepository:
 
     @staticmethod
     def get(cliente_id: str) -> Optional[dict]:
         obj = _parse_objectid(cliente_id)
         if obj is None:
             return None
-        data = clientes_collection.find_one({"_id": obj})
+        data = clients_collection.find_one({"_id": obj})
         if data:
             data["_id"] = str(data["_id"])
             return data
@@ -22,12 +22,12 @@ class ClientesRepository:
 
     @staticmethod
     def get_all(skip: int = 0, limit: int = 10) -> List[dict]:
-        clientes = []
-        cursor = clientes_collection.find().skip(skip).limit(limit)
+        clients = []
+        cursor = clients_collection.find().skip(skip).limit(limit)
         for doc in cursor:
             doc["_id"] = str(doc["_id"])
-            clientes.append(doc)
-        return clientes
+            clients.append(doc)
+        return clients
     
 
 def _parse_objectid(oid: str) -> Optional[ObjectId]:
