@@ -23,10 +23,10 @@ type Orden = {
   metadatos?: { cupon?: string } | null;
 };
 
-const apiBaseUrl = "http://localhost:8000";
-const rutaBase = apiBaseUrl + "/orden";
-const rutaCliente = apiBaseUrl + "/clientes";
-const rutaProducto = apiBaseUrl + "/productos";
+const apiBaseUrl = "http://localhost:8000/api/mongo";
+const rutaBase = apiBaseUrl + "/order";
+const rutaCliente = apiBaseUrl + "/clients";
+const rutaProducto = apiBaseUrl + "/products";
 
 export default function Orders() {
   const [orders, setOrders] = useState<any[]>([]);

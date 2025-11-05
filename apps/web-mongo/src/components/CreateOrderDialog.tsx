@@ -25,8 +25,7 @@ import { format } from "date-fns";
 
 import type { Orden, Cliente, Producto, Item } from "./EditOrderDialog"; // importa los tipos si están allí
 
-const apiBaseUrl =
-  (import.meta?.env?.VITE_API_BASE as string) || "http://localhost:8000";
+const apiBaseUrl = "http://localhost:8000/api/mongo";
 
 interface CreateOrderDialogProps {
   open: boolean;
@@ -54,11 +53,11 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const resClientes = await fetch(`${apiBaseUrl}/clientes`);
+        const resClientes = await fetch(`${apiBaseUrl}/clients`);
         const clientesJson = await resClientes.json();
         setClientes(clientesJson.data ?? clientesJson ?? []);
 
-        const resProductos = await fetch(`${apiBaseUrl}/productos`);
+        const resProductos = await fetch(`${apiBaseUrl}/products`);
         const productosJson = await resProductos.json();
         setProductos(productosJson.data ?? productosJson ?? []);
       } catch (err) {

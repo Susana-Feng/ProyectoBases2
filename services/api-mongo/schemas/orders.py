@@ -22,7 +22,7 @@ class Metadatos(BaseModel):
     cupon: Optional[str] = None
 
 # Order schema
-class Orden(BaseModel):
+class order(BaseModel):
     cliente_id: str 
     fecha: datetime
     canal: Canal
