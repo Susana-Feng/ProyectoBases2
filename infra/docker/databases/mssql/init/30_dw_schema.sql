@@ -102,15 +102,11 @@ CREATE INDEX IX_stg_items_prod  ON stg.orden_items(source_code_prod);
 -- 4.1) DimTiempo: incluye TCs prácticos (CRC->USD y USD->CRC) por fecha
 IF OBJECT_ID('dw.DimTiempo','U') IS NOT NULL DROP TABLE dw.DimTiempo;
 CREATE TABLE dw.DimTiempo (
-  TiempoID       INT          NOT NULL PRIMARY KEY,   -- YYYYMMDD
-  Fecha          DATE         NOT NULL UNIQUE,
+  TiempoID       INT          NOT NULL PRIMARY KEY, 
+  Fecha          DATE         NOT NULL UNIQUE, -- YYYYMMDD
   Anio           INT          NOT NULL,
   Mes            TINYINT      NOT NULL,
   Dia            TINYINT      NOT NULL,
-  Trimestre      TINYINT      NOT NULL,
-  NombreMes      NVARCHAR(15) NOT NULL,
-  DiaSemana      TINYINT      NOT NULL,
-  NombreDia      NVARCHAR(15) NOT NULL,
   -- TCs derivados de stg.tipo_cambio para acelerar consultas
   TC_CRC_USD     DECIMAL(18,6) NULL,                  -- USD por 1 CRC
   TC_USD_CRC     DECIMAL(18,6) NULL,                  -- CRC por 1 USD
@@ -131,10 +127,6 @@ CREATE TABLE dw.DimCliente (
   -- rastro de origen
   SourceSystem     NVARCHAR(32)  NULL,
   SourceKey        NVARCHAR(128) NULL,
-  -- historización ligera
-  VigenteDesde     DATETIME2(3)  NOT NULL DEFAULT SYSUTCDATETIME(),
-  VigenteHasta     DATETIME2(3)  NULL,
-  EsActual         BIT           NOT NULL DEFAULT 1,
   LoadTS           DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
 CREATE INDEX IX_DimCliente_Email ON dw.DimCliente(Email) WHERE Email IS NOT NULL;
@@ -154,10 +146,6 @@ CREATE TABLE dw.DimProducto (
   -- rastro de origen predominante
   SourceSystem     NVARCHAR(32)  NULL,
   SourceKey        NVARCHAR(128) NULL,
-  -- historización ligera
-  VigenteDesde     DATETIME2(3)  NOT NULL DEFAULT SYSUTCDATETIME(),
-  VigenteHasta     DATETIME2(3)  NULL,
-  EsActual         BIT           NOT NULL DEFAULT 1,
   LoadTS           DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
 -- Unicidad blanda del SKU cuando está presente y registro vigente
@@ -189,8 +177,6 @@ CREATE TABLE dw.FactVentas (
   PrecioUnitOriginal  DECIMAL(18,6) NULL,
   TotalOriginal       DECIMAL(18,6) NULL,
   TasaAplicada        DECIMAL(18,6) NULL,                    -- p.ej. CRC->USD en la fecha
-  OrdenSourceKey      NVARCHAR(128) NULL,                    -- id natural de la orden en origen
-  ItemSourceKey       NVARCHAR(128) NULL,                    -- id natural del renglón (si existe)
   LoadTS              DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
 CREATE INDEX IX_FactVentas_Tiempo    ON dw.FactVentas(TiempoID);
