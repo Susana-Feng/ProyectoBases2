@@ -64,9 +64,9 @@ interface Orden {
 }
 
 // URLs de Supabase
-const apiBaseUrl = "https://dytnjcifruchjyrxguqe.supabase.co/rest/v1/";
-const clientesUrl = `${apiBaseUrl}cliente?select=*`;
-const productosUrl = `${apiBaseUrl}producto?select=*`;
+const apiBaseUrl = "http://localhost:8000/api/supabase/";
+const clientesUrl = `${apiBaseUrl}clients/`;
+const productosUrl = `${apiBaseUrl}products/`;
 
 // Headers de Supabase
 const supabaseHeaders = {
@@ -427,7 +427,7 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
                 <div key={i} className="grid sm:grid-cols-4 gap-4 border-t pt-4 items-start">
                   {/* Producto */}
                   <div className="sm:col-span-2 min-w-0">
-                    <Label>Producto</Label>
+                    <Label className= "mb-2">Producto</Label>
                     <Select
                       value={item.producto_id}
                       onValueChange={(v) => handleChange(`items.${i}.producto_id`, v)}
@@ -453,7 +453,7 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
 
                   {/* Cantidad */}
                   <div className="min-w-0">
-                    <Label>Cantidad</Label>
+                    <Label className= "mb-2">Cantidad</Label>
                     <Input
                       type="number"
                       min="1"
@@ -470,7 +470,7 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
 
                   {/* Precio unitario */}
                   <div className="min-w-0">
-                    <Label>Precio Unitario</Label>
+                    <Label className= "mb-2 ">Precio Unit</Label>
                     <Input
                       type="number"
                       min="0"

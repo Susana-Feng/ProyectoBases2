@@ -20,6 +20,11 @@ class Canal(str, Enum):
     APP = "APP"
     PARTNER = "PARTNER"
 
+# --- PAGINATION PARAMS ---
+class PaginationParams(BaseModel):
+    offset: int = Field(0, ge=0)
+    limit: int = Field(10, ge=1, le=100)
+
 
 # --- CLIENTE ---
 class Client(BaseModel):
@@ -43,15 +48,13 @@ class Product(BaseModel):
 class Item(BaseModel):
     producto_id: str
     cantidad: int = Field(..., ge=1)
-    precio_unit: float = Field(..., ge=0)
+    precio_unitario: float = Field(..., ge=0)
 
 
 # --- ORDER ---
 class Order(BaseModel):
-    id: Optional[str] = None
     cliente_id: str
     fecha: datetime
     canal: Canal
     moneda: Moneda
-    total: float = Field(..., ge=0)
     items: List[Item] = Field(..., min_items=1)
