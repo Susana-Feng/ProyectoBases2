@@ -1,41 +1,52 @@
 from config.database import supabase
 from datetime import datetime, date
-
+import json
 # --------------------------------------------------
 # CRUD Functions using Supabase RPC
 # --------------------------------------------------
-def create_order(p_canal, p_cliente_id, p_fecha, p_items, p_moneda):
+def create_order(canal, cliente_id, fecha, items, moneda):
     try:
+        if isinstance(fecha, datetime):
+            fecha = fecha.isoformat()   
+
         response = supabase.rpc(
             'fn_crear_orden',
             {
-                'p_canal': p_canal,
-                'p_cliente_id': p_cliente_id,
-                'p_fecha': p_fecha,
-                'p_items': p_items,
-                'p_moneda': p_moneda
+                'p_canal': canal,
+                'p_cliente_id': cliente_id,
+                'p_fecha': fecha,
+                'p_items': items,
+                'p_moneda': moneda
             }
         ).execute()
 
-        print("✅ Orden creada:", response.data)
-        return response.data
+        data = response.data
+
+
+        if isinstance(data, str):
+            data = json.loads(data)
+
+        print("✅ Orden creada:", data)
+        return data
 
     except Exception as e:
         print("❌ Error al crear orden:", e)
         return None
 
-
-def update_order(p_canal, p_cliente_id, p_fecha, p_items, p_moneda, p_orden_id):
+def update_order(canal, cliente_id, fecha, items, moneda, orden_id):
     try:
+        if isinstance(fecha, datetime):
+            fecha = fecha.isoformat()   
+
         response = supabase.rpc(
             'fn_actualizar_orden_completa',
             {
-                'p_canal': p_canal,
-                'p_cliente_id': p_cliente_id,
-                'p_fecha': p_fecha,
-                'p_items': p_items,
-                'p_moneda': p_moneda,
-                'p_orden_id': p_orden_id
+                'p_canal': canal,
+                'p_cliente_id': cliente_id,
+                'p_fecha': fecha,
+                'p_items': items,
+                'p_moneda': moneda,
+                'p_orden_id': orden_id
             }
         ).execute()
 
@@ -60,38 +71,38 @@ def delete_order(p_orden_id):
         print("❌ Error al eliminar orden:", e)
         return None
 
-def get_orders():
-    try:
-        response = (
-            supabase.table("orden_completa")
-            .select("*")
-            .range(0, 9)
-            .execute()
-        )
+def get_orders(offset: int = 0, limit: int = 10):
+        try:
+            response = (
+                supabase.table("orden_completa")
+                .select("*")
+                .range(offset, offset + limit - 1)
+                .execute()
+            )
 
-        if response.data:
-            print("✅ Órdenes completas:", response.data)
-            return response.data
-        else:
-            print("⚠️ No se encontraron registros o hubo error:", response)
-            return None
+            if response.data:
+                print(f"✅ Órdenes obtenidas: {len(response.data)} (offset={offset}, limit={limit})")
+                return response.data
+            else:
+                print("⚠️ No se encontraron registros o hubo error:", response)
+                return []
+        except Exception as e:
+            print("❌ Error en OrderRepository.get_orders:", e)
+            return {"error": str(e)}
 
-    except Exception as e:
-        print("❌ Error al obtener órdenes completas:", e)
-        return None
         
 class OrderRepository:
     @staticmethod
-    def get_orders():
-        return get_orders()
+    def get_orders(offset: int = 0, limit: int = 10):
+        return get_orders(offset, limit)
 
     @staticmethod
-    def create_order(p_canal, p_cliente_id, p_fecha, p_items, p_moneda):
-        return create_order(p_canal, p_cliente_id, p_fecha, p_items, p_moneda)
+    def create_order(canal, cliente_id, fecha, items, moneda):
+        return create_order(canal, cliente_id, fecha, items, moneda)
 
     @staticmethod
-    def update_order(p_canal, p_cliente_id, p_fecha, p_items, p_moneda, p_orden_id):
-        return update_order(p_canal, p_cliente_id, p_fecha, p_items, p_moneda, p_orden_id)
+    def update_order(canal, cliente_id, fecha, items, moneda, orden_id):
+        return update_order(canal, cliente_id, fecha, items, moneda, orden_id)
 
     @staticmethod
     def delete_order(p_orden_id):

@@ -11,7 +11,7 @@ export type Item = {
   orden_id: string;
   producto_id: string;
   cantidad: number;
-  precio_unit: number;
+  precio_unitario: number;
 };
 
 export interface Orden {
@@ -35,78 +35,65 @@ export interface Orden {
   }[];
 }
 
-const apiBaseUrl = "https://dytnjcifruchjyrxguqe.supabase.co/rest/v1/";
-const obtenerOrdenes = `${apiBaseUrl}orden_completa?select=*`;
-const crearOrden = `${apiBaseUrl}rpc/fn_crear_orden`;
-const actualizarOrdenCompleta = `${apiBaseUrl}rpc/fn_actualizar_orden_completa`;
-const eliminarOrden = `${apiBaseUrl}rpc/fn_eliminar_orden`;
-
-const supabaseHeaders = {
-  "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
-  "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-  "Content-Type": "application/json"
-};
+const apiBaseUrl = "http://localhost:8000/api/supabase/";
+const obtenerOrdenes = `${apiBaseUrl}orders/`;
+const crearOrden = `${apiBaseUrl}orders/`;
+const actualizarOrdenCompleta = `${apiBaseUrl}orders/`;
+const eliminarOrden = `${apiBaseUrl}orders/`;
 
 export default function Orders() {
   const [orders, setOrders] = useState<Orden[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [offset, setOffset] = useState(0);
-  const [limit, setLimit] = useState(10);
-  const [hasMore, setHasMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [ordersPerPage, setOrdersPerPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
   const [editingOrder, setEditingOrder] = useState<Orden | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [allOrders, setAllOrders] = useState<Orden[]>([]);
 
-  async function fetchJson(url: string, method: string = "GET", payload?: any) {
-    const res = await fetch(url, {
+  async function fetchJson<T>(url: string, method: string = "GET", payload?: any): Promise<T> {
+    const options: RequestInit = {
       method,
-      headers: supabaseHeaders,
-      body: payload ? JSON.stringify(payload) : undefined
-    });
-    if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
-    return res.json();
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    };
+
+    if (method !== 'GET' && payload) {
+      options.body = JSON.stringify(payload);
+    }
+
+    console.log(`Fetching: ${url}`, options);
+
+    const res = await fetch(url, options);
+
+    console.log('Response status:', res.status);
+
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => 'No error details');
+      throw new Error(`${url} -> HTTP ${res.status}: ${errorText}`);
+    }
+
+    return res.json() as Promise<T>;
   }
 
-  // --- Cargar órdenes ---
-  async function loadOrders(offsetArg?: number, limitArg?: number) {
+  // Función para cargar todas las órdenes
+  async function loadAllOrders() {
     setLoading(true);
     setError(null);
     try {
-      const off = offsetArg ?? offset;
-      const lim = limitArg ?? limit;
+      console.log('📊 Cargando todas las órdenes...');
 
-      // Calculate page index (0-based)
-      const pageIndex = Math.floor(off / lim);
+      // Cargar una cantidad grande de órdenes para determinar el total
+      const response = await fetchJson(`${obtenerOrdenes}?offset=0&limit=1000`);
+      const rows = Array.isArray(response) ? response : [];
 
-      const needDistinct = (pageIndex + 1) * lim + 1; // distinct orders required
-      const batchSize = 200; // rows per request
-      const maxRows = 5000; // safety cap
-
-      let accumulated: any[] = [];
-      let nextRowsOffset = 0;
-      let finished = false;
-
-      while (!finished && accumulated.length < maxRows) {
-        const batch = await fetchJson(`${obtenerOrdenes}&offset=${nextRowsOffset}&limit=${batchSize}`);
-        const rows = Array.isArray(batch) ? batch : [];
-        if (rows.length === 0) {
-          finished = true;
-          break;
-        }
-        accumulated = accumulated.concat(rows);
-        nextRowsOffset += rows.length;
-
-        // quick check: count distinct orden_id in accumulated
-        const distinct = new Set(accumulated.map(r => r.orden_id)).size;
-        if (distinct >= needDistinct) finished = true;
-        // if we've fetched a lot already, stop (maxRows cap)
-        if (accumulated.length >= maxRows) finished = true;
-      }
-
-      // Group accumulated rows into orders in insertion order
+      // Agrupar items por orden_id
       const ordersMap = new Map<string, any>();
-      for (const item of accumulated) {
+      for (const item of rows) {
         if (!ordersMap.has(item.orden_id)) {
           ordersMap.set(item.orden_id, {
             orden_id: item.orden_id,
@@ -114,12 +101,11 @@ export default function Orders() {
             canal: item.canal,
             moneda: item.moneda,
             total: item.total,
-            cliente: { 
+            cliente: {
               cliente_id: item.cliente_id,
-              nombre: item.nombre_cliente 
+              nombre: item.nombre_cliente,
             },
             items: [],
-            clienteLoading: false
           });
         }
         const order = ordersMap.get(item.orden_id);
@@ -127,27 +113,55 @@ export default function Orders() {
           producto_id: item.producto_id,
           cantidad: item.cantidad,
           precio_unitario: item.precio_unitario,
-          producto: { 
+          producto: {
             producto_id: item.producto_id,
-            nombre: item.nombre_producto 
-          }
+            nombre: item.nombre_producto,
+          },
         });
       }
 
-      const allOrders = Array.from(ordersMap.values());
-      const start = pageIndex * lim;
-      const list: Orden[] = allOrders.slice(start, start + lim);
+      const allOrdersArray = Array.from(ordersMap.values());
+      console.log(`✅ ${allOrdersArray.length} órdenes totales encontradas`);
 
-      setOrders(list);
-      setOffset(off);
-      setLimit(lim);
-      setHasMore(allOrders.length > start + lim);
+      setAllOrders(allOrdersArray);
+      updatePagination(allOrdersArray, ordersPerPage, 1);
 
     } catch (err: any) {
+      console.error('❌ Error loading all orders:', err);
       setError(err.message || String(err));
     } finally {
       setLoading(false);
     }
+  }
+
+  // Función para actualizar la paginación basada en las órdenes y configuración actual
+  function updatePagination(ordersArray: Orden[], perPage: number, page: number) {
+    // Calcular el total de páginas
+    const calculatedTotalPages = Math.ceil(ordersArray.length / perPage);
+    setTotalPages(calculatedTotalPages);
+
+    // Calcular el rango de órdenes para la página actual
+    const startIndex = (page - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const currentPageOrders = ordersArray.slice(startIndex, endIndex);
+
+    console.log(`📄 Página ${page} de ${calculatedTotalPages}, mostrando ${currentPageOrders.length} órdenes de ${ordersArray.length} totales`);
+
+    setOrders(currentPageOrders);
+    setCurrentPage(page);
+  }
+
+  // Función para cambiar de página
+  function goToPage(page: number) {
+    if (page < 1 || page > totalPages) return;
+    updatePagination(allOrders, ordersPerPage, page);
+  }
+
+  // Función para cambiar el número de órdenes por página
+  function handleOrdersPerPageChange(newLimit: number) {
+    setOrdersPerPage(newLimit);
+    // Reiniciar a la página 1 con el nuevo límite
+    updatePagination(allOrders, newLimit, 1);
   }
 
   // --- Crear orden ---
@@ -156,12 +170,17 @@ export default function Orders() {
       setLoading(true);
       setError(null);
       
+      const total = newOrder.items.reduce((sum, item) => {
+        return sum + (item.cantidad * item.precio_unitario);
+      }, 0);
+
       const body = {
-        "p_cliente_id": newOrder.cliente.cliente_id,
-        "p_fecha": newOrder.fecha,
-        "p_canal": newOrder.canal,
-        "p_moneda": newOrder.moneda,
-        "p_items": newOrder.items.map(item => ({
+        "cliente_id": newOrder.cliente.cliente_id,
+        "fecha": newOrder.fecha,
+        "canal": newOrder.canal,
+        "moneda": newOrder.moneda,
+        "total": total,
+        "items": newOrder.items.map(item => ({
           producto_id: item.producto_id,
           cantidad: item.cantidad,
           precio_unitario: item.precio_unitario
@@ -170,18 +189,23 @@ export default function Orders() {
 
       console.log('Creando nueva orden:', body);
 
-      const res = await fetch(crearOrden, { 
-        method: "POST", 
-        headers: supabaseHeaders,
-        body: JSON.stringify(body) 
+      const res = await fetch(crearOrden, {
+        method: "POST",
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(body),
       });
-      
+
       if (!res.ok) {
         const errorText = await res.text();
         throw new Error(`Error al crear orden: ${errorText}`);
       }
       
-      await loadOrders(offset, limit);
+      // Recargar todas las órdenes
+      await loadAllOrders();
+      
     } catch (err: any) {
       setError(err.message || String(err));
     } finally {
@@ -195,27 +219,37 @@ export default function Orders() {
       setLoading(true);
       setError(null);
       
-      // Asegurar que la fecha esté en formato ISO string
+      const total = edited.items.reduce((sum, item) => {
+        return sum + (item.cantidad * item.precio_unitario);
+      }, 0);
+
       const fechaISO = new Date(edited.fecha).toISOString();
       
+      // 🔹 CORREGIDO: El orden_id va en la URL, no en el body
       const body = {
-        "p_orden_id": edited.orden_id,
-        "p_cliente_id": edited.cliente.cliente_id,
-        "p_fecha": fechaISO,
-        "p_canal": edited.canal,
-        "p_moneda": edited.moneda,
-        "p_items": edited.items.map(item => ({
+        "cliente_id": edited.cliente.cliente_id,
+        "fecha": fechaISO,
+        "canal": edited.canal,
+        "moneda": edited.moneda,
+        "total": total,
+        "items": edited.items.map(item => ({
           producto_id: item.producto_id,
           cantidad: item.cantidad,
           precio_unitario: item.precio_unitario
         }))
       };
 
-      console.log('Enviando datos a fn_actualizar_orden_completa:', body);
+      // 🔹 CORREGIDO: Incluir el orden_id en la URL
+      const url = `${actualizarOrdenCompleta}${edited.orden_id}`;
+      console.log('Enviando datos para actualizar a URL:', url);
+      console.log('Body:', body);
 
-      const res = await fetch(actualizarOrdenCompleta, { 
-        method: "POST", 
-        headers: supabaseHeaders,
+      const res = await fetch(url, { 
+        method: "PUT", 
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
         body: JSON.stringify(body) 
       });
       
@@ -225,15 +259,15 @@ export default function Orders() {
         throw new Error(`Error al actualizar orden: ${errorText}`);
       }
       
-      const responseText = await res.text();
-      if (responseText) {
-        const result = JSON.parse(responseText);
-        console.log('Orden actualizada exitosamente:', result);
-      } else {
-        console.log('Orden actualizada exitosamente (respuesta vacía)');
-      }
+      // Actualizar en el estado local
+      const updatedAllOrders = allOrders.map(order => 
+        order.orden_id === edited.orden_id ? edited : order
+      );
+      setAllOrders(updatedAllOrders);
       
-      await loadOrders(offset, limit);
+      // Actualizar la vista actual manteniendo la página y límite actual
+      updatePagination(updatedAllOrders, ordersPerPage, currentPage);
+      
     } catch (err: any) {
       console.error('Error completo:', err);
       setError(err.message || String(err));
@@ -250,18 +284,23 @@ export default function Orders() {
       setLoading(true);
       setError(null);
       
-      const body = {
-        "p_orden_id": o.orden_id
-      };
+      const url = `${eliminarOrden}${o.orden_id}`;
+      console.log('Eliminando orden con URL:', url);
 
-      const res = await fetch(eliminarOrden, { 
-        method: "POST", 
-        headers: supabaseHeaders,
-        body: JSON.stringify(body) 
+      const res = await fetch(url, { 
+        method: "DELETE", // Usar DELETE method
+        headers: {
+          'Accept': 'application/json',
+        },
       });
       
-      if (!res.ok) throw new Error(await res.text());
-      await loadOrders(offset, limit);
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Error al eliminar orden: ${errorText}`);
+      }
+      
+      // Recargar todas las órdenes
+      await loadAllOrders();
     } catch (err: any) {
       setError(err.message || String(err));
     } finally {
@@ -269,14 +308,15 @@ export default function Orders() {
     }
   }
 
-  const currentPage = limit > 0 ? Math.floor(offset / limit) + 1 : 1;
+  const hasNextPage = currentPage < totalPages;
+  const hasPrevPage = currentPage > 1;
 
   useEffect(() => {
-    loadOrders(0, limit);
+    loadAllOrders();
   }, []);
 
-  return (
-    <div className="p-4 mx-auto bg-neutral-50 dark:bg-neutral-950 w-full h-screen overflow-hidden">
+    return (
+    <div className="p-4 mx-auto bg-neutral-50 dark:bg-neutral-950 w-full min-h-screen"> {/* Cambiado a min-h-screen */}
       <div className="flex items-center justify-center mb-4">
         <h2 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100 text-center">Órdenes</h2>
         <div className="absolute right-0 mr-9"><DarkToggle /></div>
@@ -294,36 +334,37 @@ export default function Orders() {
         </Button>
       </div>
 
-      <Table className="bg-neutral-100 dark:bg-neutral-900 rounded-sm">
+      {/* Tabla sin contenedor de scroll - se expandirá naturalmente */}
+      <Table className="bg-neutral-100 dark:bg-neutral-900 rounded-sm w-full">
         <TableCaption className="text-neutral-600 dark:text-neutral-400 text-center mx-auto">
           <div className="flex items-center justify-center gap-4">
             <div className="flex items-center gap-2">
-              <Button 
-                className="bg-neutral-900 dark:bg-neutral-600" 
-                size="sm" 
-                onClick={() => loadOrders(Math.max(0, offset - limit), limit)} 
-                disabled={offset === 0 || loading}
+              <Button
+                className="bg-neutral-900 dark:bg-neutral-600"
+                size="sm"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={!hasPrevPage || loading}
               >
-                <ArrowBigLeftDash className="dark:text-white"/>
+                <ArrowBigLeftDash className="dark:text-white" />
               </Button>
-              <Button 
-                className="bg-neutral-900 dark:bg-neutral-600" 
-                size="sm" 
-                onClick={() => loadOrders(offset + limit, limit)} 
-                disabled={!hasMore || loading}
+
+              <Button
+                className="bg-neutral-900 dark:bg-neutral-600"
+                size="sm"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={!hasNextPage || loading}
               >
-                <ArrowBigRightDash className="dark:text-white"/>
+                <ArrowBigRightDash className="dark:text-white" />
               </Button>
+
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm text-neutral-700 dark:text-neutral-300">Cantidad Órdenes</label>
+              <label className="text-sm text-neutral-700 dark:text-neutral-300">Órdenes por página</label>
               <select 
-                value={limit} 
+                value={ordersPerPage} 
                 onChange={(e) => { 
-                  const l = Number(e.target.value) || 10; 
-                  setLimit(l); 
-                  setOffset(0); 
-                  loadOrders(0, l); 
+                  const newLimit = Number(e.target.value) || 10; 
+                  handleOrdersPerPageChange(newLimit);
                 }} 
                 className="text-sm p-1 border rounded bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-neutral-100"
                 disabled={loading}
@@ -335,7 +376,7 @@ export default function Orders() {
               </select>
             </div>
             <div className="text-sm text-neutral-700 dark:text-neutral-300 ml-3">
-              {loading ? "Cargando..." : `Página ${currentPage}`}
+              {loading ? "Cargando..." : `Página ${currentPage} de ${totalPages}`}
             </div>
           </div>
         </TableCaption>
@@ -375,7 +416,7 @@ export default function Orders() {
                 {o.cliente?.nombre ?? "Desconocido"}
               </TableCell>
               <TableCell className="text-center">
-                {new Date(o.fecha).toLocaleString()}
+                {new Date(o.fecha).toLocaleDateString()}
               </TableCell>
               <TableCell className="text-center">
                 {o.canal}
