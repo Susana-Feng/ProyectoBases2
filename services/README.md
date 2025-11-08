@@ -1,4 +1,4 @@
-# Servicios (carpeta services)
+# Web Apps & Web Loaders APIs
 
 Este README describe las APIs y utilidades del directorio `services/` del repositorio. Contiene instrucciones rápidas para ejecutar cada servicio, referencias a los ficheros más importantes y notas de despliegue.
 
@@ -14,9 +14,9 @@ Este README describe las APIs y utilidades del directorio `services/` del reposi
 - Bun (recomendado) o Node.js + npm/yarn (servicios TypeScript: `api-mysql`, `api-mssql`).
 - Bases de datos/servicios locales o remotos según cada API (MongoDB, Neo4j, MySQL, MSSQL, Supabase).
 
-## Estructura (árbol de carpetas)
+## Estructura 
 
-A continuación se listan únicamente las carpetas que existen dentro de cada API (estructura en árbol):
+A continuación se listan las carpetas que existen dentro de cada API:
 
 ```bash
 services/
@@ -49,7 +49,7 @@ services/
 Cada subcarpeta también suele incluir un `requirements.txt` o `package.json` y un `.env.example` cuando aplica.
 
 
-## Cómo ejecutar cada servicio (Windows / Linux)
+## Cómo ejecutar cada servicio
 
 Las instrucciones muestran tanto Windows (PowerShell) como Linux/macOS cuando difieren. Reemplaza `python` por `python3` si tu sistema lo requiere.
 
