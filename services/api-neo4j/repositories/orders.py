@@ -81,8 +81,11 @@ RETURN
   r.cantidad AS cantidad,
   r.precio_unit AS precio_unit,
   (r.cantidad * r.precio_unit) AS subtotal
-ORDER BY o.fecha ASC;
+ORDER BY o.fecha ASC
+SKIP $skip
+LIMIT $limit;
 '''
+
 
 readOrderByIdQuery = '''
 MATCH (c:Cliente)-[:REALIZO]->(o:Orden {id: $id})-[r:CONTIENE]->(p:Producto)-[:PERTENECE_A]->(cat:Categoria)
@@ -154,14 +157,19 @@ class OrderRepository:
             return False
 
     @staticmethod
-    def read_orders():
+    def read_orders(skip: int = 0, limit: int = 20):
         with driver.session() as session:
             try:
-                result = session.run(readOrdersQuery)
+                result = session.run(
+                    readOrdersQuery,
+                    skip=skip,
+                    limit=limit
+                )
                 return [record.data() for record in result]
             except Exception as e:
                 print(f"Error in read_orders: {e}")
                 return []
+
 
     @staticmethod
     def read_order_by_id(order_id):

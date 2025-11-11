@@ -8,16 +8,26 @@ from neo4j.time import DateTime  # Importar el tipo de fecha de Neo4j
 class OrdersController:
     
     @staticmethod
-    def get_all_orders():
+    def get_all_orders(skip: int = 0, limit: int = 10):
         try:
-            orders_data = OrderRepository.read_orders()
+            # Validaciones básicas
+            limit = min(limit, 100)  # evitar que pidan más de 100
+            skip = max(skip, 0)
+
+            # Leer datos paginados desde Neo4j
+            orders_data = OrderRepository.read_orders(skip=skip, limit=limit)
             processed_orders = OrdersController._process_orders_data(orders_data)
+
+            # Retornar resultado estructurado
             return {
-                "total": len(processed_orders),
+                "skip": skip,
+                "limit": limit,
+                "count": len(processed_orders),
                 "data": processed_orders
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error retrieving orders: {str(e)}")
+
 
     @staticmethod
     def get_order_by_id(order_id: str):
