@@ -151,9 +151,11 @@ class OrdersController:
             
             # Actualizar la orden - usar la versión corregida
             success = OrderRepository.update_order_with_relationships(
+                
                 id=order_id,
                 fecha=order_data.fecha,
                 canal=order_data.canal.value,
+                cliente_id=order_data.cliente_id,
                 moneda=order_data.moneda.value,
                 total=order_data.total,
                 items=items_for_neo4j
