@@ -46,7 +46,7 @@ export type Orden = {
   // Atributo opcional no estructural
   metadatos?: { cupon?: string } | null;
 };
-const apiBaseUrl = "http://localhost:8000/api/neo4j";
+const apiBaseUrl = "http://localhost:8001/api/neo4j";
 const rutaBase = apiBaseUrl + "/orders";
 
 export default function Orders() {

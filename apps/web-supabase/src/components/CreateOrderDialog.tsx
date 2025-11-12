@@ -64,7 +64,7 @@ interface Orden {
 }
 
 // URLs de Supabase
-const apiBaseUrl = "http://localhost:8000/api/supabase/";
+const apiBaseUrl = "http://localhost:8002/api/supabase/";
 const clientesUrl = `${apiBaseUrl}clients/`;
 const productosUrl = `${apiBaseUrl}products/`;
 
