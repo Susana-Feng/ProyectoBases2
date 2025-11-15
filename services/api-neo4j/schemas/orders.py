@@ -47,6 +47,9 @@ class Item(BaseModel):
     precio_unit: float = Field(..., ge=0)
 
 
+class OrdersPagination(BaseModel):
+    skip: int = 0
+    limit: int = 20
 
 # --- ORDER  ---
 class Order(BaseModel):
