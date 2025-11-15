@@ -1,13 +1,13 @@
 from typing import Any
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Depends
 from controllers.orders import OrdersController
-from schemas.orders import Order
+from schemas.orders import Order, OrdersPagination
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
 @router.get("/", summary="List all orders")
-def list_orders() -> Any:
-    return OrdersController.get_all_orders()
+def list_orders(params: OrdersPagination = Depends()) -> Any:
+    return OrdersController.get_all_orders(skip=params.skip, limit=params.limit)
 
 @router.get("/{order_id}", summary="Get order by ID")
 def get_order(order_id: str) -> Any:

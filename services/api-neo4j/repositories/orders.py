@@ -37,19 +37,24 @@ RETURN "success" AS result;
 '''
 
 updateOrderRelationshipsQuery = '''
-// Actualizar la orden
-MATCH (o:Orden {id: $id})
-SET o.fecha = datetime($fecha),
-    o.canal = $canal,
-    o.moneda = $moneda,
-    o.total = $total
+OPTIONAL MATCH (old:Orden {id: $id})
+DETACH DELETE old
 
-// Eliminar relaciones de productos existentes
+// Crear la orden
+CREATE (o:Orden {
+  id: $id,
+  fecha: datetime($fecha),
+  canal: $canal,
+  moneda: $moneda,
+  total: $total
+})
+
+// Relacionar con el cliente
 WITH o
-MATCH (o)-[r:CONTIENE]->()
-DELETE r
+MATCH (c:Cliente {id: $cliente_id})
+CREATE (c)-[:REALIZO]->(o)
 
-// Crear nuevas relaciones con productos
+// Crear relaciones con productos
 WITH o
 UNWIND $items AS item
 MATCH (p:Producto {id: item.producto_id})
@@ -58,8 +63,8 @@ CREATE (o)-[r:CONTIENE {
   precio_unit: item.precio_unit
 }]->(p)
 
-// Retornar algo simple o nada
-RETURN true as success;
+// Retornar solo un valor simple para confirmación
+RETURN "success" AS result;
 '''
 
 readOrdersQuery = '''
@@ -81,8 +86,11 @@ RETURN
   r.cantidad AS cantidad,
   r.precio_unit AS precio_unit,
   (r.cantidad * r.precio_unit) AS subtotal
-ORDER BY o.fecha ASC;
+ORDER BY o.fecha ASC
+SKIP $skip
+LIMIT $limit;
 '''
+
 
 readOrderByIdQuery = '''
 MATCH (c:Cliente)-[:REALIZO]->(o:Orden {id: $id})-[r:CONTIENE]->(p:Producto)-[:PERTENECE_A]->(cat:Categoria)
@@ -154,14 +162,19 @@ class OrderRepository:
             return False
 
     @staticmethod
-    def read_orders():
+    def read_orders(skip: int = 0, limit: int = 20):
         with driver.session() as session:
             try:
-                result = session.run(readOrdersQuery)
+                result = session.run(
+                    readOrdersQuery,
+                    skip=skip,
+                    limit=limit
+                )
                 return [record.data() for record in result]
             except Exception as e:
                 print(f"Error in read_orders: {e}")
                 return []
+
 
     @staticmethod
     def read_order_by_id(order_id):
@@ -185,8 +198,7 @@ class OrderRepository:
                 return False
 
     @staticmethod
-    def update_order_with_relationships(id, fecha, canal, moneda, total, items):
-        """Versión simplificada que solo ejecuta sin retornar resultados"""
+    def update_order_with_relationships(id, fecha, canal, cliente_id, moneda, total, items):
         if isinstance(fecha, datetime):
             fecha = fecha.isoformat()
         elif isinstance(fecha, date):
@@ -198,6 +210,7 @@ class OrderRepository:
                     tx.run(
                         updateOrderRelationshipsQuery,
                         id=id,
+                        cliente_id=cliente_id,
                         fecha=fecha,
                         canal=canal,
                         moneda=moneda,

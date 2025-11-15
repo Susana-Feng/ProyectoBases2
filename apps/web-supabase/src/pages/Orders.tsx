@@ -35,7 +35,7 @@ export interface Orden {
   }[];
 }
 
-const apiBaseUrl = "http://localhost:8000/api/supabase/";
+const apiBaseUrl = "http://localhost:8002/api/supabase/";
 const obtenerOrdenes = `${apiBaseUrl}orders/`;
 const crearOrden = `${apiBaseUrl}orders/`;
 const actualizarOrdenCompleta = `${apiBaseUrl}orders/`;
