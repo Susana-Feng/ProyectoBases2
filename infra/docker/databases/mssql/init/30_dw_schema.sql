@@ -69,22 +69,18 @@ CREATE TABLE stg.orden_items (
   stg_id            BIGINT IDENTITY(1,1) PRIMARY KEY,
   source_system     NVARCHAR(32)  NOT NULL,        -- ms sql | mysql | pg | mongo | neo4j
   source_key_orden  NVARCHAR(128) NOT NULL,        -- id natural de la orden en la fuente
-  source_key_item   NVARCHAR(128) NULL,            -- id natural del renglón si existe
+  source_key_item   NVARCHAR(128) NULL,            -- id natural del item si existe
   source_code_prod  NVARCHAR(128) NOT NULL,        -- SKU / codigo_alt / codigo_mongo
-  cliente_key       NVARCHAR(128) NULL,            -- email, id, etc. según fuente
-  cliente_email     NVARCHAR(150) NULL,
-  cliente_nombre    NVARCHAR(200) NULL,
-  genero_raw        NVARCHAR(20)  NULL,            -- M | F | X 
-  pais_raw          NVARCHAR(60)  NULL,
-  fecha_raw         NVARCHAR(30)  NOT NULL,        -- texto o datetime según fuente
-  fecha_utc         DATETIME2(3)  NULL,            -- si ya viene como fecha
+  cliente_key       NVARCHAR(128) NULL,            -- cliente_id
+  fecha_raw         NVARCHAR(30)  NOT NULL,        -- fecha original del source (si venía como texto)
+  fecha_utc         DATETIME2(3)  NULL,            -- fecha original del source (si venía como datetime)
   canal_raw         NVARCHAR(32)  NULL,            -- WEB | TIENDA | APP | PARTNER | otros
   moneda            CHAR(3)       NOT NULL,        -- 'USD' | 'CRC'
   cantidad_raw      NVARCHAR(32)  NOT NULL,
   precio_unit_raw   NVARCHAR(32)  NOT NULL,
   total_raw         NVARCHAR(32)  NULL,
   -- Campos limpios (tras primer paso de limpieza)
-  fecha_dt          DATE          NULL,
+  fecha_dt          DATE          NULL,         -- fecha de la orden ya casteada a Formato del DW
   cantidad_num      DECIMAL(18,4) NULL,
   precio_unit_num   DECIMAL(18,6) NULL,
   total_num         DECIMAL(18,6) NULL,
@@ -92,6 +88,25 @@ CREATE TABLE stg.orden_items (
 );
 CREATE INDEX IX_stg_items_fecha ON stg.orden_items(fecha_dt);
 CREATE INDEX IX_stg_items_prod  ON stg.orden_items(source_code_prod);
+
+-- 3.4) Staging Clientes
+IF OBJECT_ID('stg.clientes','U') IS NOT NULL DROP TABLE stg.clientes;
+CREATE TABLE stg.clientes (
+  stg_id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+  source_system     NVARCHAR(32)  NOT NULL,        -- ms sql | mysql | pg | mongo | neo4j
+  source_code  NVARCHAR(128) NOT NULL,              -- codigo cliente original
+  cliente_email     NVARCHAR(150) NULL,
+  cliente_nombre    NVARCHAR(200) NULL,
+  genero_raw        NVARCHAR(20)  NULL,            -- Genero original (sin formatear)
+  pais_raw          NVARCHAR(60)  NULL,
+  fecha_creado_raw         NVARCHAR(30)  NOT NULL,        -- texto o datetime según fuente
+  fecha_creado_utc         DATETIME2(3)  NULL,            -- si ya viene como fecha
+  --- Campos limpios (tras primer paso de limpieza)
+  fecha_creado_dt DATE NULL,
+  genero_norm         CHAR(1)       NULL, -- M | F | N
+
+  load_ts           DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
+);
 
 /* =======================================================================
    4) Dimensiones del DW (dw) — con claves sustitutas e historización simple
@@ -165,7 +180,7 @@ CREATE TABLE dw.FactVentas (
   ClienteID           INT         NOT NULL FOREIGN KEY REFERENCES dw.DimCliente(ClienteID),
   ProductoID          INT         NOT NULL FOREIGN KEY REFERENCES dw.DimProducto(ProductoID),
   -- atributos de análisis
-  Canal               NVARCHAR(20) NOT NULL,                 -- WEB | TIENDA | APP | PARTNER (estandarizado)
+  Canal               NVARCHAR(20) NOT NULL,                 -- WEB | TIENDA | APP | PARTNER
   Fuente              NVARCHAR(20) NOT NULL,                 -- 'mssql' | 'mysql' | 'pg' | 'mongo' | 'neo4j'
   -- medidas
   Cantidad            DECIMAL(18,4) NOT NULL,
