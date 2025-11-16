@@ -5,7 +5,7 @@ Configuración de conexiones a bases de datos.
 import os
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
-
+from pymongo import MongoClient
 # Cargar variables de entorno
 load_dotenv(".env.local")
 
@@ -26,6 +26,9 @@ BCCR_ENDPOINT = "https://gee.bccr.fi.cr/Indicadores/Suscripciones/WS/wsindicador
 BCCR_INDICADOR_COMPRA = "317"  # Compra USD/CRC
 BCCR_INDICADOR_VENTA = "318"  # Venta USD/CRC
 
+# Variables de conexión MongoDB
+MONGO_URI = os.getenv("MONGO_URI")
+MONGO_DB = os.getenv("MONGO_DB")
 
 def get_dw_engine():
     """
@@ -39,7 +42,16 @@ def get_dw_engine():
     return create_engine(connection_string, echo=False)
 
 
+def get_mongo_client():
+    return MongoClient(MONGO_URI)
+
+def get_mongo_database():
+    client = get_mongo_client()
+    return client[MONGO_DB]
+
+
 if __name__ == "__main__":
     print("Configuraciones cargadas exitosamente.")
     print(f"MSSQL DW: {MSSQL_DW_HOST}:{MSSQL_DW_PORT}/{MSSQL_DW_DB}")
     print(f"BCCR Endpoint: {BCCR_ENDPOINT}")
+    print(f"MongoDB URI: {MONGO_URI} - - - - Database: {MONGO_DB}") 
