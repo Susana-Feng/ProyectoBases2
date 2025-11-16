@@ -1,0 +1,269 @@
+---
+title: Driver ODBC 18 de SQL Server
+description: Instalar Microsoft ODBC Driver 18 para SQL Server (requerido para pyodbc)
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+El Microsoft ODBC Driver 18 para SQL Server es necesario para aplicaciones Python que usan `pyodbc` para conectarse a bases de datos SQL Server. Esta guía cubre la instalación para todas las plataformas soportadas.
+
+## Linux
+
+### Ubuntu/Debian
+
+<Steps>
+<Step>
+
+#### Importar clave GPG de Microsoft
+
+```bash
+curl https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+```
+
+</Step>
+
+<Step>
+
+#### Agregar repositorio de Microsoft
+
+```bash
+curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list | \
+    sudo tee /etc/apt/sources.list.d/mssql-release.list
+```
+
+Para Debian, reemplaza `ubuntu` con `debian` en la URL.
+
+</Step>
+
+<Step>
+
+#### Actualizar lista de paquetes
+
+```bash
+sudo apt-get update
+```
+
+</Step>
+
+<Step>
+
+#### Instalar driver ODBC 18
+
+```bash
+sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
+```
+
+La variable de entorno `ACCEPT_EULA=Y` acepta automáticamente el Acuerdo de Licencia de Usuario Final.
+
+</Step>
+
+<Step>
+
+#### Instalar herramientas adicionales (opcional)
+
+```bash
+sudo apt-get install -y unixodbc-dev
+```
+
+Este paquete proporciona los encabezados de desarrollo necesarios para compilar `pyodbc` desde el código fuente.
+
+</Step>
+
+<Step>
+
+#### Verificar instalación
+
+```bash
+odbcinst -q -d
+```
+
+Deberías ver `ODBC Driver 18 for SQL Server` en la salida.
+
+</Step>
+
+</Steps>
+
+### Fedora/CentOS/RHEL
+
+<Steps>
+<Step>
+
+#### Importar clave GPG de Microsoft
+
+```bash
+sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
+```
+
+</Step>
+
+<Step>
+
+#### Agregar repositorio de Microsoft
+
+Para RHEL 8+ / CentOS 8+:
+```bash
+curl https://packages.microsoft.com/config/rhel/8/prod.repo | \
+    sudo tee /etc/yum.repos.d/mssql-release.repo
+```
+
+Para versiones anteriores, reemplaza `8` con tu versión de RHEL/CentOS.
+
+</Step>
+
+<Step>
+
+#### Instalar driver ODBC 18
+
+```bash
+sudo ACCEPT_EULA=Y dnf install -y msodbcsql18
+```
+
+O para sistemas basados en yum:
+```bash
+sudo ACCEPT_EULA=Y yum install -y msodbcsql18
+```
+
+</Step>
+
+<Step>
+
+#### Instalar herramientas adicionales (opcional)
+
+```bash
+sudo dnf install -y unixODBC-devel
+```
+
+O para sistemas basados en yum:
+```bash
+sudo yum install -y unixODBC-devel
+```
+
+</Step>
+
+<Step>
+
+#### Verificar instalación
+
+```bash
+odbcinst -q -d
+```
+
+Deberías ver `ODBC Driver 18 for SQL Server` en la salida.
+
+</Step>
+
+</Steps>
+
+## macOS
+
+<Steps>
+<Step>
+
+#### Descargar driver ODBC 18
+
+Descarga el paquete del driver desde la [documentación de Microsoft](https://learn.microsoft.com/es-es/sql/connect/odbc/download-odbc-driver-for-sql-server).
+
+Elige:
+- **Apple Silicon (M1/M2/M3)**: `msodbcsql18-18.x.x-arm64.pkg`
+- **Intel**: `msodbcsql18-18.x.x-x64.pkg`
+
+</Step>
+
+<Step>
+
+#### Instalar el paquete
+
+1. Abre el archivo `.pkg` descargado
+2. Sigue el asistente de instalación
+3. Acepta el acuerdo de licencia
+4. Completa la instalación
+
+</Step>
+
+<Step>
+
+#### Verificar instalación
+
+```bash
+odbcinst -q -d
+```
+
+Deberías ver `ODBC Driver 18 for SQL Server` en la salida.
+
+</Step>
+
+</Steps>
+
+### Alternativa: usando Homebrew
+
+```bash
+brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release
+brew update
+HOMEBREW_ACCEPT_EULA=Y brew install msodbcsql18 mssql-tools18
+```
+
+## Windows
+
+<Steps>
+<Step>
+
+#### Descargar driver ODBC 18
+
+Descarga el instalador de Windows desde la [documentación de Microsoft](https://learn.microsoft.com/es-es/sql/connect/odbc/download-odbc-driver-for-sql-server).
+
+Elige la arquitectura apropiada:
+- **x64**: Para Windows de 64 bits
+- **x86**: Para Windows de 32 bits (raro)
+
+</Step>
+
+<Step>
+
+#### Ejecutar el instalador
+
+1. Ejecuta el archivo `.exe` descargado (`msodbcsql.msi` o similar)
+2. Sigue el asistente de instalación
+3. Acepta el acuerdo de licencia
+4. Completa la instalación
+
+</Step>
+
+<Step>
+
+#### Verificar instalación
+
+Abre PowerShell y ejecuta:
+
+```powershell
+Get-OdbcDriver | Where-Object Name -like "*SQL Server*"
+```
+
+Deberías ver `ODBC Driver 18 for SQL Server` en la salida.
+
+</Step>
+
+</Steps>
+
+### Alternativa: usando Chocolatey
+
+```powershell
+choco install sqlserver-odbcdriver18 -y
+```
+
+## Solución de problemas
+
+### Driver no encontrado
+
+- **Linux/macOS**: Asegúrate de que el driver esté listado en `odbcinst -q -d`
+- **Windows**: Verifica si el driver aparece en `Get-OdbcDriver`
+
+### EULA no aceptada
+
+Asegúrate de usar `ACCEPT_EULA=Y` (Linux) o aceptarlo durante la instalación (macOS/Windows).
+
+## Próximos pasos
+
+Una vez instalado el driver ODBC, puedes:
+- [Configurar e iniciar bases de datos](/es/docs/installation/database-setup)
+- Configurar tu entorno Python para los scripts ETL
+

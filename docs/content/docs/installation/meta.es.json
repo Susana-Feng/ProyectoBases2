@@ -1,0 +1,10 @@
+{
+  "title": "Instalación",
+  "description": "Guías de configuración para dependencias y bases de datos",
+  "pages": [
+    "docker-installation",
+    "sql-server-driver",
+    "database-setup"
+  ]
+}
+

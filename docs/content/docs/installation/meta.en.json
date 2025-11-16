@@ -1,0 +1,10 @@
+{
+  "title": "Installation",
+  "description": "Setup guides for dependencies and databases",
+  "pages": [
+    "docker-installation",
+    "sql-server-driver",
+    "database-setup"
+  ]
+}
+

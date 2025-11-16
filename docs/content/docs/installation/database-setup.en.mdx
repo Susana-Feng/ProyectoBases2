@@ -1,0 +1,327 @@
+---
+title: Database Setup
+description: Start and initialize databases using the provided scripts
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+This guide explains how to use the provided scripts to start and initialize the database containers for the project.
+
+## Prerequisites
+
+Before running the scripts, ensure you have:
+
+- Docker and Docker Compose installed ([see installation guide](/en/docs/installation/docker-installation))
+- A `.env.local` file in the project root (copy from `.env.example` if needed)
+- The project structure in place
+
+## Scripts Overview
+
+The project includes two scripts with the same functionality:
+
+- **Linux/macOS**: `scripts/dev_up.sh` (bash script)
+- **Windows**: `scripts/dev_up.ps1` (PowerShell script)
+
+Both scripts support the same operations and database options.
+
+## Available Databases
+
+The project uses the following databases:
+
+- **mssql**: Microsoft SQL Server
+- **mysql**: MySQL 8.x
+- **neo4j**: Neo4j (graph database)
+
+## Script Options
+
+### Basic Usage
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh [options] [databases]
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 [options] [databases]
+```
+
+### Options
+
+- **`--up`** (default): Start the specified databases
+- **`--init`**: Reinitialize databases (removes existing data)
+- **`--down`**: Stop and remove containers
+- **`--logs`**: Show service logs
+- **`--help`**: Display help information
+
+### Database Selection
+
+You can specify one or more databases:
+
+- `mssql` - Start only SQL Server
+- `mysql` - Start only MySQL
+- `neo4j` - Start only Neo4j
+- `all` - Start all databases (default if none specified)
+
+## Common Operations
+
+### Start All Databases
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1
+```
+
+This will start all three databases (MSSQL, MySQL, Neo4j) with their default configurations.
+
+### Start a Specific Database
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh mssql
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Databases mssql
+```
+
+### Initialize Databases (Fresh Start)
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --init all
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Init -Databases all
+```
+
+**Warning**: This will delete all existing data in the databases!
+
+### Stop All Databases
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --down all
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Down -Databases all
+```
+
+### View Logs
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --logs mysql
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Logs -Databases mysql
+```
+
+Press `Ctrl+C` to exit the logs view.
+
+### Get Help
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --help
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Help
+```
+
+## First-Time Setup
+
+<Steps>
+<Step>
+
+#### Create Environment File
+
+If `.env.local` doesn't exist, create it from `.env.example`:
+
+**Linux/macOS:**
+```bash
+cp .env.example .env.local
+```
+
+**Windows:**
+```powershell
+Copy-Item .env.example .env.local
+```
+
+</Step>
+
+<Step>
+
+#### Edit Environment Variables
+
+Open `.env.local` and configure:
+
+- Database passwords
+- Port numbers (if needed)
+- Other environment-specific settings
+
+</Step>
+
+<Step>
+
+#### Make Scripts Executable (Linux/macOS only)
+
+```bash
+chmod +x scripts/dev_up.sh
+```
+
+</Step>
+
+<Step>
+
+#### Start Databases with Initialization
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --init all
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Init -Databases all
+```
+
+This will:
+1. Start the database containers
+2. Wait for them to be healthy
+3. Run initialization scripts to create schemas and seed data
+
+</Step>
+
+<Step>
+
+#### Verify Databases are Running
+
+**Linux/macOS:**
+```bash
+docker ps
+```
+
+**Windows:**
+```powershell
+docker ps
+```
+
+You should see containers for:
+- `mssql_sales`
+- `mysql_sales`
+- `neo4j_sales`
+
+</Step>
+
+</Steps>
+
+## Connection Information
+
+### Microsoft SQL Server
+
+- **Host**: `localhost`
+- **Port**: `1433` (default)
+- **Default Database**: `DB_SALES`
+- **Username**: `sa`
+- **Password**: Set in `.env.local` (`MSSQL_SA_PASSWORD`)
+
+### MySQL
+
+- **Host**: `localhost`
+- **Port**: `3306` (default)
+- **Default Database**: `DB_SALES`
+- **Username**: `root`
+- **Password**: Set in `.env.local` (`MYSQL_ROOT_PASSWORD`)
+
+### Neo4j
+
+- **HTTP Port**: `7474`
+- **Bolt Port**: `7687`
+- **Username**: `neo4j`
+- **Password**: Set in `.env.local` (`NEO4J_AUTH`)
+
+Access the Neo4j Browser at: http://localhost:7474
+
+## Troubleshooting
+
+### Script Permission Denied (Linux/macOS)
+
+```bash
+chmod +x scripts/dev_up.sh
+```
+
+### Docker Not Running
+
+Ensure Docker Desktop (macOS/Windows) or Docker daemon (Linux) is running.
+
+### Port Already in Use
+
+If a port is already in use, either:
+1. Stop the conflicting service
+2. Modify the port in the Docker Compose files (`infra/docker/databases/*/compose.yaml`)
+3. Update your `.env.local` if ports are configurable
+
+### Container Fails to Start
+
+Check the logs:
+```bash
+docker logs <container_name>
+```
+
+### Environment File Missing
+
+The script requires `.env.local`. Create it from `.env.example`.
+
+### Database Initialization Fails
+
+Check that:
+1. Containers are healthy (use `docker ps`)
+2. Init scripts exist in `infra/docker/databases/*/init/`
+3. Permissions are correct (Linux/macOS)
+
+## Advanced Usage
+
+### Starting Multiple Specific Databases
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh mssql mysql
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Databases mssql,mysql
+```
+
+### Custom Docker Compose Profiles
+
+The scripts use Docker Compose profiles. You can also use `docker compose` directly:
+
+```bash
+docker compose -f infra/docker/compose.dev.yml --profile all up -d
+```
+
+## Next Steps
+
+Once databases are running, you can:
+
+- Configure your application connections
+- Run ETL scripts
+- Access database management tools
+- Start developing!
+
