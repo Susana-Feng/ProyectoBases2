@@ -130,7 +130,6 @@ CREATE TABLE dw.DimCliente (
   LoadTS           DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
 CREATE INDEX IX_DimCliente_Email ON dw.DimCliente(Email) WHERE Email IS NOT NULL;
-CREATE INDEX IX_DimCliente_Actual ON dw.DimCliente(EsActual);
 
 -- 4.3) DimProducto (canónica por sku_oficial)
 IF OBJECT_ID('dw.DimProducto','U') IS NOT NULL DROP TABLE dw.DimProducto;
@@ -148,8 +147,8 @@ CREATE TABLE dw.DimProducto (
   SourceKey        NVARCHAR(128) NULL,
   LoadTS           DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
--- Unicidad blanda del SKU cuando está presente y registro vigente
-CREATE UNIQUE INDEX UX_DimProducto_SKU ON dw.DimProducto(SKU) WHERE SKU IS NOT NULL AND EsActual = 1;
+-- Unicidad blanda del SKU cuando está presente
+CREATE UNIQUE INDEX UX_DimProducto_SKU ON dw.DimProducto(SKU) WHERE SKU IS NOT NULL;
 CREATE INDEX IX_DimProducto_Categoria ON dw.DimProducto(Categoria);
 
 /* =======================================================================
@@ -238,7 +237,7 @@ SELECT
   SUM(f.TotalUSD)   AS VentasUSD
 FROM dw.FactVentas f
 JOIN dw.DimTiempo  t ON t.TiempoID  = f.TiempoID
-JOIN dw.DimProducto p ON p.ProductoID = f.ProductoID AND p.EsActual = 1
+JOIN dw.DimProducto p ON p.ProductoID = f.ProductoID
 GROUP BY t.Anio, t.Mes, p.SKU, p.Nombre, p.Categoria;
 GO
 
