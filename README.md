@@ -165,13 +165,9 @@ docker network create --driver bridge sales_net || echo "La red sales_net ya exi
 Crea un archivo `.env.local` basado en `.env.example`:
 
 ```bash
-# MSSQL - Sales
+# MSSQL - Sales y Datawarehouse
 MSSQL_SA_PASS=YourStrong@Passw0rd1
 MSSQL_SA_PORT=1433
-
-# MSSQL - Datawarehouse
-MSSQL_DW_PASS=YourStrong@Passw0rd1
-MSSQL_DW_PORT=1434
 
 # MySQL
 MYSQL_ROOT_PASS=YourStrong@Passw0rd1
