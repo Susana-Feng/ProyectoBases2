@@ -74,7 +74,7 @@ CREATE TABLE stg.orden_items (
   cliente_key       NVARCHAR(128) NULL,            -- email, id, etc. según fuente
   cliente_email     NVARCHAR(150) NULL,
   cliente_nombre    NVARCHAR(200) NULL,
-  genero_raw        NVARCHAR(20)  NULL,            -- M | F | X | Masculino | Femenino | Otro
+  genero_raw        NVARCHAR(20)  NULL,            -- M | F | X 
   pais_raw          NVARCHAR(60)  NULL,
   fecha_raw         NVARCHAR(30)  NOT NULL,        -- texto o datetime según fuente
   fecha_utc         DATETIME2(3)  NULL,            -- si ya viene como fecha
