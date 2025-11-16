@@ -73,7 +73,6 @@ CREATE TABLE stg.orden_items (
   source_code_prod  NVARCHAR(128) NOT NULL,        -- SKU / codigo_alt / codigo_mongo
   cliente_key       NVARCHAR(128) NULL,            -- cliente_id
   fecha_raw         NVARCHAR(30)  NOT NULL,        -- fecha original del source (si venía como texto)
-  fecha_utc         DATETIME2(3)  NULL,            -- fecha original del source (si venía como datetime)
   canal_raw         NVARCHAR(32)  NULL,            -- WEB | TIENDA | APP | PARTNER | otros
   moneda            CHAR(3)       NOT NULL,        -- 'USD' | 'CRC'
   cantidad_raw      NVARCHAR(32)  NOT NULL,
@@ -100,7 +99,6 @@ CREATE TABLE stg.clientes (
   genero_raw        NVARCHAR(20)  NULL,            -- Genero original (sin formatear)
   pais_raw          NVARCHAR(60)  NULL,
   fecha_creado_raw         NVARCHAR(30)  NOT NULL,        -- texto o datetime según fuente
-  fecha_creado_utc         DATETIME2(3)  NULL,            -- si ya viene como fecha
   --- Campos limpios (tras primer paso de limpieza)
   fecha_creado_dt DATE NULL,
   genero_norm         CHAR(1)       NULL, -- M | F | N

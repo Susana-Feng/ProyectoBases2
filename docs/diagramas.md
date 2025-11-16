@@ -2,5 +2,5 @@
 
 
 ## Datawarehouse (SQL Server)
-![Alt text](images/dw.png)
+![Alt text](images/dw_diagrama.png)
 
