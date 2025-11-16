@@ -1,0 +1,330 @@
+---
+title: Docker Installation
+description: Install Docker and Docker Compose on Linux, macOS, and Windows
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+Docker is required to run the database containers used in this project. This guide covers installation for all supported platforms.
+
+## Linux
+
+### Ubuntu/Debian
+
+<Steps>
+<Step>
+
+#### Update Package Index
+
+```bash
+sudo apt-get update
+```
+
+</Step>
+
+<Step>
+
+#### Install Prerequisites
+
+```bash
+sudo apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+```
+
+</Step>
+
+<Step>
+
+#### Add Docker's Official GPG Key
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+```
+
+</Step>
+
+<Step>
+
+#### Add Docker Repository
+
+```bash
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+```
+
+</Step>
+
+<Step>
+
+#### Install Docker Engine
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+</Step>
+
+<Step>
+
+#### Start Docker Service
+
+```bash
+sudo systemctl start docker
+sudo systemctl enable docker
+```
+
+</Step>
+
+<Step>
+
+#### Verify Installation
+
+```bash
+docker --version
+docker compose version
+```
+
+</Step>
+
+</Steps>
+
+### Optional: Add User to Docker Group
+
+To run Docker commands without `sudo`:
+
+```bash
+sudo usermod -aG docker $USER
+```
+
+**Important**: Log out and log back in for this change to take effect.
+
+### Fedora/CentOS/RHEL
+
+<Steps>
+<Step>
+
+#### Install Prerequisites
+
+```bash
+sudo dnf install -y dnf-plugins-core
+```
+
+</Step>
+
+<Step>
+
+#### Add Docker Repository
+
+```bash
+sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+```
+
+</Step>
+
+<Step>
+
+#### Install Docker Engine
+
+```bash
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+</Step>
+
+<Step>
+
+#### Start Docker Service
+
+```bash
+sudo systemctl start docker
+sudo systemctl enable docker
+```
+
+</Step>
+
+<Step>
+
+#### Verify Installation
+
+```bash
+docker --version
+docker compose version
+```
+
+</Step>
+
+</Steps>
+
+## macOS
+
+### Docker Desktop
+
+<Steps>
+<Step>
+
+#### Download Docker Desktop
+
+Download Docker Desktop for Mac from the [official website](https://www.docker.com/products/docker-desktop/).
+
+Choose the appropriate version:
+- **Apple Silicon (M1/M2/M3)**: Download `Docker.dmg` for Apple Silicon
+- **Intel**: Download `Docker.dmg` for Intel
+
+</Step>
+
+<Step>
+
+#### Install Docker Desktop
+
+1. Open the downloaded `.dmg` file
+2. Drag Docker.app to the Applications folder
+3. Open Docker from Applications
+4. Follow the setup wizard
+
+</Step>
+
+<Step>
+
+#### Verify Installation
+
+```bash
+docker --version
+docker compose version
+```
+
+</Step>
+
+</Steps>
+
+### Alternative: Using Homebrew
+
+```bash
+brew install --cask docker
+```
+
+Then open Docker Desktop from Applications.
+
+## Windows
+
+### Docker Desktop
+
+<Steps>
+<Step>
+
+#### System Requirements
+
+- Windows 10 64-bit: Pro, Enterprise, or Education (Build 19041 or later)
+- Windows 11 64-bit
+- WSL 2 feature enabled
+- Virtualization enabled in BIOS
+
+</Step>
+
+<Step>
+
+#### Enable WSL 2 (if not already enabled)
+
+Open PowerShell as Administrator and run:
+
+```powershell
+wsl --install
+```
+
+Restart your computer when prompted.
+
+</Step>
+
+<Step>
+
+#### Download Docker Desktop
+
+Download Docker Desktop for Windows from the [official website](https://www.docker.com/products/docker-desktop/).
+
+</Step>
+
+<Step>
+
+#### Install Docker Desktop
+
+1. Run the installer (`Docker Desktop Installer.exe`)
+2. Follow the installation wizard
+3. Ensure "Use WSL 2 instead of Hyper-V" is checked (if WSL 2 is available)
+4. Restart your computer if prompted
+
+</Step>
+
+<Step>
+
+#### Start Docker Desktop
+
+1. Launch Docker Desktop from the Start menu
+2. Accept the service agreement
+3. Wait for Docker to start (the whale icon in the system tray should stop animating)
+
+</Step>
+
+<Step>
+
+#### Verify Installation
+
+Open PowerShell and run:
+
+```powershell
+docker --version
+docker compose version
+```
+
+</Step>
+
+</Steps>
+
+## Verify Docker Compose
+
+Docker Compose is included with Docker Desktop and modern Docker installations. Verify it works:
+
+**Linux/macOS:**
+```bash
+docker compose version
+```
+
+**Windows:**
+```powershell
+docker compose version
+```
+
+If you see version information, you're ready to proceed to the next step!
+
+## Troubleshooting
+
+### Docker daemon not running
+
+**Linux:**
+```bash
+sudo systemctl status docker
+sudo systemctl start docker
+```
+
+**macOS/Windows**: Ensure Docker Desktop is running.
+
+### Permission denied errors (Linux)
+
+Add your user to the docker group (see "Optional: Add User to Docker Group" above).
+
+### Port conflicts
+
+If ports 1433 (MSSQL), 3306 (MySQL), 7474/7687 (Neo4j) are already in use, stop the conflicting services or modify the Docker Compose configurations.
+
+## Next Steps
+
+Once Docker is installed and running, proceed to:
+- [SQL Server ODBC Driver Installation](/en/docs/installation/sql-server-driver)
+- [Database Setup](/en/docs/installation/database-setup)
+

@@ -1,0 +1,125 @@
+import { createFileRoute, notFound } from '@tanstack/react-router';
+import { DocsLayout } from 'fumadocs-ui/layouts/docs';
+import { createServerFn } from '@tanstack/react-start';
+import { source } from '@/lib/source';
+import type * as PageTree from 'fumadocs-core/page-tree';
+import { useMemo } from 'react';
+import { docs } from '@/.source';
+import {
+  DocsBody,
+  DocsDescription,
+  DocsPage,
+  DocsTitle,
+} from 'fumadocs-ui/page';
+import defaultMdxComponents from 'fumadocs-ui/mdx';
+import { createClientLoader } from 'fumadocs-mdx/runtime/vite';
+import { baseOptions } from '@/lib/layout.shared';
+
+export const Route = createFileRoute('/$lang/docs/$')({
+  component: Page,
+  loader: async ({ params }) => {
+    const data = await loader({
+      data: {
+        slugs: params._splat?.split('/') ?? [],
+        lang: params.lang,
+      },
+    });
+    await clientLoader.preload(data.path);
+    return data;
+  },
+});
+
+const loader = createServerFn({
+  method: 'GET',
+})
+  .inputValidator((params: { slugs: string[]; lang?: string }) => params)
+  .handler(async ({ data: { slugs, lang } }) => {
+    const page = source.getPage(slugs, lang);
+    if (!page) throw notFound();
+
+    return {
+      tree: source.getPageTree(lang) as object,
+      path: page.path,
+    };
+  });
+
+const clientLoader = createClientLoader(docs.doc, {
+  id: 'docs',
+  component({ toc, frontmatter, default: MDX }) {
+    return (
+      <DocsPage
+        toc={toc}
+        tableOfContent={{
+          style: 'clerk',
+        }}
+      >
+        <DocsTitle>{frontmatter.title}</DocsTitle>
+        <DocsDescription>{frontmatter.description}</DocsDescription>
+        <DocsBody>
+          <MDX
+            components={{
+              ...defaultMdxComponents,
+            }}
+          />
+        </DocsBody>
+      </DocsPage>
+    );
+  },
+});
+
+function Page() {
+  const { lang } = Route.useParams();
+  const data = Route.useLoaderData();
+  const Content = clientLoader.getComponent(data.path);
+  const tree = useMemo(
+    () => transformPageTree(data.tree as PageTree.Folder),
+    [data.tree],
+  );
+
+  return (
+    <DocsLayout
+      {...baseOptions(lang)}
+      tree={tree}
+      sidebar={{
+        tabs: false,
+      }}
+    >
+      <Content />
+    </DocsLayout>
+  );
+}
+
+function transformPageTree(root: PageTree.Root): PageTree.Root {
+  function mapNode<T extends PageTree.Node>(item: T): T {
+    if (typeof item.icon === 'string') {
+      item = {
+        ...item,
+        icon: (
+          <span
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: necessary for rendering icon HTML
+            dangerouslySetInnerHTML={{
+              __html: item.icon,
+            }}
+          />
+        ),
+      };
+    }
+
+    if (item.type === 'folder') {
+      return {
+        ...item,
+        index: item.index ? mapNode(item.index) : undefined,
+        children: item.children.map(mapNode),
+      };
+    }
+
+    return item;
+  }
+
+  return {
+    ...root,
+    children: root.children.map(mapNode),
+    fallback: root.fallback ? transformPageTree(root.fallback) : undefined,
+  };
+}
+

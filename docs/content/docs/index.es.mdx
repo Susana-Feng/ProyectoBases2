@@ -1,0 +1,58 @@
+---
+title: Documentación
+description: Proyecto de integración de bases de datos
+---
+
+Este proyecto integra múltiples bases de datos transaccionales en un Data Warehouse centralizado.
+
+## Comenzar
+
+<Cards>
+  <Card
+    href="/es/docs/installation/docker-installation"
+    title="Instalación de Docker"
+  >
+    Instalar Docker y Docker Compose en Linux, macOS y Windows
+  </Card>
+  <Card
+    href="/es/docs/installation/sql-server-driver"
+    title="Driver ODBC de SQL Server"
+  >
+    Instalar Microsoft ODBC Driver 18 para SQL Server (requerido para pyodbc)
+  </Card>
+  <Card
+    href="/es/docs/installation/database-setup"
+    title="Configuración de bases de datos"
+  >
+    Iniciar e inicializar bases de datos usando los scripts proporcionados
+  </Card>
+</Cards>
+
+## Resumen del proyecto
+
+Este proyecto implementa un proceso ETL para integrar datos de múltiples fuentes transaccionales en un Data Warehouse centralizado en SQL Server.
+
+### Bases de datos soportadas
+
+- **Microsoft SQL Server**: Datos transaccionales de ventas en USD
+- **MySQL**: Ventas transaccionales con códigos alternos y montos en formato texto
+- **MongoDB**: Ventas basadas en documentos con totales en CRC
+- **Neo4j**: Base de datos de grafos para relaciones de compras
+- **PostgreSQL/Supabase**: Sistema transaccional basado en UUIDs
+
+## Inicio rápido
+
+Una vez instaladas todas las dependencias, puedes iniciar todas las bases de datos rápidamente:
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1
+```
+
+Para más detalles sobre cómo usar estos scripts, consulta la guía de [Configuración de bases de datos](/es/docs/installation/database-setup).
+

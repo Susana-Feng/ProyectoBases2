@@ -1,0 +1,58 @@
+---
+title: Documentation
+description: Database integration project
+---
+
+This project integrates multiple transactional databases into a centralized Data Warehouse.
+
+## Getting Started
+
+<Cards>
+  <Card
+    href="/en/docs/installation/docker-installation"
+    title="Docker Installation"
+  >
+    Install Docker and Docker Compose on Linux, macOS, and Windows
+  </Card>
+  <Card
+    href="/en/docs/installation/sql-server-driver"
+    title="SQL Server ODBC Driver"
+  >
+    Install Microsoft ODBC Driver 18 for SQL Server (required for pyodbc)
+  </Card>
+  <Card
+    href="/en/docs/installation/database-setup"
+    title="Database Setup"
+  >
+    Start and initialize databases using the provided scripts
+  </Card>
+</Cards>
+
+## Project Overview
+
+This project implements an ETL process to integrate data from multiple transactional sources into a centralized SQL Server Data Warehouse.
+
+### Supported Databases
+
+- **Microsoft SQL Server**: Transactional sales data in USD
+- **MySQL**: Transactional sales with alternate codes and text-formatted amounts
+- **MongoDB**: Document-based sales with totals in CRC
+- **Neo4j**: Graph database for purchase relationships
+- **PostgreSQL/Supabase**: UUID-based transactional system
+
+## Quick Start
+
+Once all dependencies are installed, you can quickly start all databases:
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1
+```
+
+For more details on using these scripts, see the [Database Setup](/en/docs/installation/database-setup) guide.
+

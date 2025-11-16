@@ -1,0 +1,327 @@
+---
+title: Configuración de bases de datos
+description: Iniciar e inicializar bases de datos usando los scripts proporcionados
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+Esta guía explica cómo usar los scripts proporcionados para iniciar e inicializar los contenedores de bases de datos del proyecto.
+
+## Requisitos previos
+
+Antes de ejecutar los scripts, asegúrate de tener:
+
+- Docker y Docker Compose instalados ([ver guía de instalación](/es/docs/installation/docker-installation))
+- Un archivo `.env.local` en la raíz del proyecto (copia desde `.env.example` si es necesario)
+- La estructura del proyecto en su lugar
+
+## Resumen de scripts
+
+El proyecto incluye dos scripts con la misma funcionalidad:
+
+- **Linux/macOS**: `scripts/dev_up.sh` (script bash)
+- **Windows**: `scripts/dev_up.ps1` (script PowerShell)
+
+Ambos scripts soportan las mismas operaciones y opciones de bases de datos.
+
+## Bases de datos disponibles
+
+El proyecto usa las siguientes bases de datos:
+
+- **mssql**: Microsoft SQL Server
+- **mysql**: MySQL 8.x
+- **neo4j**: Neo4j (base de datos de grafos)
+
+## Opciones del script
+
+### Uso básico
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh [opciones] [bases_de_datos]
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 [opciones] [bases_de_datos]
+```
+
+### Opciones
+
+- **`--up`** (por defecto): Iniciar las bases de datos especificadas
+- **`--init`**: Reinicializar bases de datos (elimina datos existentes)
+- **`--down`**: Detener y eliminar contenedores
+- **`--logs`**: Mostrar logs de los servicios
+- **`--help`**: Mostrar información de ayuda
+
+### Selección de base de datos
+
+Puedes especificar una o más bases de datos:
+
+- `mssql` - Iniciar solo SQL Server
+- `mysql` - Iniciar solo MySQL
+- `neo4j` - Iniciar solo Neo4j
+- `all` - Iniciar todas las bases de datos (por defecto si no se especifica ninguna)
+
+## Operaciones comunes
+
+### Iniciar todas las bases de datos
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1
+```
+
+Esto iniciará las tres bases de datos (MSSQL, MySQL, Neo4j) con sus configuraciones por defecto.
+
+### Iniciar una base de datos específica
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh mssql
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Databases mssql
+```
+
+### Inicializar bases de datos (inicio limpio)
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --init all
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Init -Databases all
+```
+
+**Advertencia**: ¡Esto eliminará todos los datos existentes en las bases de datos!
+
+### Detener todas las bases de datos
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --down all
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Down -Databases all
+```
+
+### Ver logs
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --logs mysql
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Logs -Databases mysql
+```
+
+Presiona `Ctrl+C` para salir de la vista de logs.
+
+### Obtener ayuda
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --help
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Help
+```
+
+## Configuración inicial
+
+<Steps>
+<Step>
+
+#### Crear archivo de entorno
+
+Si `.env.local` no existe, créalo desde `.env.example`:
+
+**Linux/macOS:**
+```bash
+cp .env.example .env.local
+```
+
+**Windows:**
+```powershell
+Copy-Item .env.example .env.local
+```
+
+</Step>
+
+<Step>
+
+#### Editar variables de entorno
+
+Abre `.env.local` y configura:
+
+- Contraseñas de bases de datos
+- Números de puerto (si es necesario)
+- Otras configuraciones específicas del entorno
+
+</Step>
+
+<Step>
+
+#### Hacer scripts ejecutables (solo Linux/macOS)
+
+```bash
+chmod +x scripts/dev_up.sh
+```
+
+</Step>
+
+<Step>
+
+#### Iniciar bases de datos con inicialización
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh --init all
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Init -Databases all
+```
+
+Esto hará:
+1. Iniciar los contenedores de bases de datos
+2. Esperar a que estén saludables
+3. Ejecutar scripts de inicialización para crear esquemas y datos iniciales
+
+</Step>
+
+<Step>
+
+#### Verificar que las bases de datos estén ejecutándose
+
+**Linux/macOS:**
+```bash
+docker ps
+```
+
+**Windows:**
+```powershell
+docker ps
+```
+
+Deberías ver contenedores para:
+- `mssql_sales`
+- `mysql_sales`
+- `neo4j_sales`
+
+</Step>
+
+</Steps>
+
+## Información de conexión
+
+### Microsoft SQL Server
+
+- **Host**: `localhost`
+- **Puerto**: `1433` (por defecto)
+- **Base de datos por defecto**: `DB_SALES`
+- **Usuario**: `sa`
+- **Contraseña**: Establecida en `.env.local` (`MSSQL_SA_PASSWORD`)
+
+### MySQL
+
+- **Host**: `localhost`
+- **Puerto**: `3306` (por defecto)
+- **Base de datos por defecto**: `DB_SALES`
+- **Usuario**: `root`
+- **Contraseña**: Establecida en `.env.local` (`MYSQL_ROOT_PASSWORD`)
+
+### Neo4j
+
+- **Puerto HTTP**: `7474`
+- **Puerto Bolt**: `7687`
+- **Usuario**: `neo4j`
+- **Contraseña**: Establecida en `.env.local` (`NEO4J_AUTH`)
+
+Accede al Navegador de Neo4j en: http://localhost:7474
+
+## Solución de problemas
+
+### Permiso denegado en script (Linux/macOS)
+
+```bash
+chmod +x scripts/dev_up.sh
+```
+
+### Docker no está ejecutándose
+
+Asegúrate de que Docker Desktop (macOS/Windows) o el demonio de Docker (Linux) esté ejecutándose.
+
+### Puerto ya en uso
+
+Si un puerto ya está en uso, puedes:
+1. Detener el servicio en conflicto
+2. Modificar el puerto en los archivos Docker Compose (`infra/docker/databases/*/compose.yaml`)
+3. Actualizar tu `.env.local` si los puertos son configurables
+
+### El contenedor falla al iniciar
+
+Revisa los logs:
+```bash
+docker logs <nombre_contenedor>
+```
+
+### Archivo de entorno faltante
+
+El script requiere `.env.local`. Créalo desde `.env.example`.
+
+### La inicialización de base de datos falla
+
+Verifica que:
+1. Los contenedores estén saludables (usa `docker ps`)
+2. Los scripts de inicialización existan en `infra/docker/databases/*/init/`
+3. Los permisos sean correctos (Linux/macOS)
+
+## Uso avanzado
+
+### Iniciar múltiples bases de datos específicas
+
+**Linux/macOS:**
+```bash
+./scripts/dev_up.sh mssql mysql
+```
+
+**Windows:**
+```powershell
+.\scripts\dev_up.ps1 -Databases mssql,mysql
+```
+
+### Perfiles personalizados de Docker Compose
+
+Los scripts usan perfiles de Docker Compose. También puedes usar `docker compose` directamente:
+
+```bash
+docker compose -f infra/docker/compose.dev.yml --profile all up -d
+```
+
+## Próximos pasos
+
+Una vez que las bases de datos estén ejecutándose, puedes:
+
+- Configurar las conexiones de tu aplicación
+- Ejecutar scripts ETL
+- Acceder a herramientas de gestión de bases de datos
+- ¡Comenzar a desarrollar!
+
