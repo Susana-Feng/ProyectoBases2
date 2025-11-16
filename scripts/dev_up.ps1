@@ -26,6 +26,7 @@
 # ================================================================
 
 param(
+    [switch]$Up,
     [switch]$Init,
     [switch]$Down,
     [switch]$Logs,
@@ -238,14 +239,12 @@ function Main {
     }
     
     # Si no se especificaron bases de datos, usar todas
-    if ($Databases.Count -eq 0) {
+    if ($Databases.Count -eq 0 -or ($Databases.Count -eq 1 -and $Databases[0] -eq "")) {
         $Databases = @("mssql", "mysql", "neo4j")
     }
-    else {
+    elseif ($Databases -contains "all") {
         # Procesar "all"
-        if ($Databases -contains "all") {
-            $Databases = @("mssql", "mysql", "neo4j")
-        }
+        $Databases = @("mssql", "mysql", "neo4j")
     }
     
     # Verificaciones iniciales
