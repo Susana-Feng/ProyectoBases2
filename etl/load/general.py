@@ -120,7 +120,6 @@ query_insert_dimProducto_dw = """
         :SourceKey)
 """
 
-# Notar que ese query tiene NULLs, no los tendrían
 query_insert_factVentas=    """
     INSERT INTO dw.FactVentas(
         TiempoID,
@@ -157,17 +156,30 @@ query_insert_factVentas=    """
         T.Fecha = O.fecha_dt
 """
 
-def load_dim_tiempo():
 
-    # Cargar DimTiempo desde 2024-01-01 hasta 2025-12-31
-    with engine.begin() as conn:
-        conn.exec_driver_sql(query_insert_DimTime)
+''' -----------------------------------------------------------------------
+            Funciones auxiliares para cargar el DataWarehouse
+    ----------------------------------------------------------------------- ''' 
 
 def get_clientes_stg():
     with engine.connect() as conn:
         result = conn.execute(text(query_select_clientes_stg))
         clientes_stg = result.fetchall()
     return clientes_stg
+
+def get_map_productos():
+    with engine.connect() as conn:
+        result = conn.execute(text(query_select_map_producto))
+        productos_stg = result.fetchall()
+    return productos_stg
+
+
+def load_dim_tiempo():
+
+    # Cargar DimTiempo desde 2024-01-01 hasta 2025-12-31
+    with engine.begin() as conn:
+        conn.exec_driver_sql(query_insert_DimTime)
+
 
 def load_dim_cliente():
 
@@ -186,12 +198,6 @@ def load_dim_cliente():
                     })
                 conn.commit()
                 
-def get_map_productos():
-    with engine.connect() as conn:
-        result = conn.execute(text(query_select_map_producto))
-        productos_stg = result.fetchall()
-    return productos_stg
-
 
 def load_dim_producto():
 
@@ -212,6 +218,12 @@ def load_dim_producto():
 def load_fact_ventas():
     with engine.begin() as conn:
         conn.exec_driver_sql(query_insert_factVentas)    
+
+
+''' -----------------------------------------------------------------------
+            Funcion principal para cargar el DataWarehouse
+    ----------------------------------------------------------------------- ''' 
+
 
 def load_datawarehouse():
     load_dim_tiempo()
