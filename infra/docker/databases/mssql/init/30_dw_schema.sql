@@ -101,7 +101,7 @@ CREATE TABLE stg.clientes (
   fecha_creado_raw         NVARCHAR(30)  NOT NULL,        -- texto o datetime según fuente
   --- Campos limpios (tras primer paso de limpieza)
   fecha_creado_dt DATE NULL,
-  genero_norm         CHAR(1)       NULL, -- M | F | N
+  genero_norm         CHAR(32)       NULL, 
 
   load_ts           DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
@@ -135,7 +135,7 @@ CREATE TABLE dw.DimCliente (
   -- claves de negocio (no únicas en DW para permitir SCD2)
   Email            NVARCHAR(150) NULL,
   Nombre           NVARCHAR(200) NOT NULL,
-  Genero           NVARCHAR(12)  NOT NULL CHECK (Genero IN (N'Masculino',N'Femenino',N'No especificado')),
+  Genero           NVARCHAR(32)  NOT NULL CHECK (Genero IN (N'Masculino',N'Femenino',N'No especificado')),
   Pais             NVARCHAR(60)  NULL,
   -- rastro de origen
   SourceSystem     NVARCHAR(32)  NULL,
