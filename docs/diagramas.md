@@ -2,5 +2,12 @@
 
 
 ## Datawarehouse (SQL Server)
-![Alt text](images/dw_diagrama.png)
 
+<p align="center">
+  <img src="images/dw_diagrama.png" width="1000">
+</p>
+
+## MongoDB
+<p align="center">
+  <img src="images/mongo_diagrama.png" width="600">
+</p>
