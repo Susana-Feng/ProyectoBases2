@@ -132,6 +132,7 @@ CREATE INDEX IX_DimTiempo_YM ON dw.DimTiempo(Anio, Mes);
 IF OBJECT_ID('dw.DimCliente','U') IS NOT NULL DROP TABLE dw.DimCliente;
 CREATE TABLE dw.DimCliente (
   ClienteID        INT IDENTITY(1,1) PRIMARY KEY,
+  FechaCreacionID INT NOT NULL FOREIGN KEY REFERENCES dw.DimTiempo(TiempoID),
   -- claves de negocio (no únicas en DW para permitir SCD2)
   Email            NVARCHAR(150) NULL,
   Nombre           NVARCHAR(200) NOT NULL,
@@ -152,9 +153,6 @@ CREATE TABLE dw.DimProducto (
   Nombre           NVARCHAR(200) NOT NULL,
   Categoria        NVARCHAR(120) NOT NULL,
   EsServicio       BIT           NOT NULL DEFAULT 0,
-  -- referencias a códigos equivalentes (útiles para trazabilidad)
-  CodigoAlt        NVARCHAR(64)  NULL,
-  CodigoMongo      NVARCHAR(64)  NULL,
   -- rastro de origen predominante
   SourceSystem     NVARCHAR(32)  NULL,
   SourceKey        NVARCHAR(128) NULL,
@@ -188,7 +186,6 @@ CREATE TABLE dw.FactVentas (
   MonedaOriginal      CHAR(3)       NOT NULL,                -- 'USD' | 'CRC'
   PrecioUnitOriginal  DECIMAL(18,6) NULL,
   TotalOriginal       DECIMAL(18,6) NULL,
-  TasaAplicada        DECIMAL(18,6) NULL,                    -- p.ej. CRC->USD en la fecha
   LoadTS              DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
 CREATE INDEX IX_FactVentas_Tiempo    ON dw.FactVentas(TiempoID);

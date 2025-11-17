@@ -1,8 +1,11 @@
-from pprint import pprint
 import pandas as pd
 from sqlalchemy import text
 from configs.connections import get_dw_engine
-from datetime import datetime
+from bson import ObjectId
+from configs.connections import get_mongo_database
+
+db = get_mongo_database()
+products_collection = db["productos"]
 
 engine = get_dw_engine()
 
@@ -156,15 +159,22 @@ def insert_orden_items_stg(items_flat):
 
         fecha_dt = i.get('fecha').date()   # Convierte datetime a date, Formato fechas: YYYY-MM-DD
         cantidad_num = float(i.get('cantidad'))     #Formato numeros: DECIMAL
+
         precio_unit_num = float(i.get('precio_unitario'))
         total_num = float(i.get('total_orden'))
+        
+        producto_obj = products_collection.find_one( #Mapeo de ProductoID para obtener codigo_mongo
+            {"_id": ObjectId(i.get("producto_id"))},
+            {"codigo_mongo": 1}
+        )
+        codigo_mongo = producto_obj["codigo_mongo"] if producto_obj else None
 
         with engine.connect() as conn:
             conn.execute(text(query_insert_orden_item_stg), {
                     'source_system': 'mongo',
                     'source_key_orden': i.get('orden_id'),
                     'source_key_item': i.get('producto_id'),
-                    'source_code_prod': i.get('producto_id'),
+                    'source_code_prod': codigo_mongo,
                     'cliente_key': i.get('cliente_id'),
                     'fecha_raw': i.get('fecha'),
                     'canal_raw': i.get('canal'),
