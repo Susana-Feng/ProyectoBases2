@@ -22,7 +22,7 @@ query_insert_DimTime = """
     INSERT INTO dw.DimTiempo (
         TiempoID, Fecha, Anio, Mes, Dia
     )
-    SELECT 
+    SELECT
         CONVERT(INT, FORMAT(Fecha, 'yyyyMMdd')) AS TiempoID,
         Fecha,
         YEAR(Fecha)  AS Anio,
@@ -34,7 +34,7 @@ query_insert_DimTime = """
 
 query_insert_dimCliente_dw = """
     INSERT INTO dw.DimCliente (
-        SourceSystem, 
+        SourceSystem,
         SourceKey,
         Email,
         Nombre,
@@ -69,7 +69,7 @@ query_select_clientes_stg = """
 """
 
 query_select_map_producto = """
-    SELECT 
+    SELECT
         P.source_system AS SourceSystem,
         P.source_code AS SourceKey,
         P.nombre_norm AS Nombre,
@@ -81,7 +81,7 @@ query_select_map_producto = """
 
 query_insert_dimCliente_dw = """
     INSERT INTO dw.DimCliente (
-        SourceSystem, 
+        SourceSystem,
         SourceKey,
         Email,
         Nombre,
@@ -104,7 +104,7 @@ query_insert_dimCliente_dw = """
 
 query_insert_dimProducto_dw = """
     INSERT INTO dw.DimProducto (
-        SKU, 
+        SKU,
         Nombre,
         Categoria,
         EsServicio,
@@ -112,7 +112,7 @@ query_insert_dimProducto_dw = """
         SourceKey
     )
     VALUES (
-        :SKU, 
+        :SKU,
         :Nombre,
         :Categoria,
         :EsServicio,
@@ -120,7 +120,7 @@ query_insert_dimProducto_dw = """
         :SourceKey)
 """
 
-query_insert_factVentas=    """
+query_insert_factVentas = """
     INSERT INTO dw.FactVentas(
         TiempoID,
         ClienteID,
@@ -161,11 +161,13 @@ query_insert_factVentas=    """
             Funciones auxiliares para cargar el DataWarehouse
     ----------------------------------------------------------------------- ''' 
 
+
 def get_clientes_stg():
     with engine.connect() as conn:
         result = conn.execute(text(query_select_clientes_stg))
         clientes_stg = result.fetchall()
     return clientes_stg
+
 
 def get_map_productos():
     with engine.connect() as conn:
@@ -197,7 +199,7 @@ def load_dim_cliente():
                         'FechaCreacion': cliente.FechaCreacion
                     })
                 conn.commit()
-                
+
 
 def load_dim_producto():
 
@@ -214,6 +216,7 @@ def load_dim_producto():
                         'EsServicio': producto.EsServicio,
                     })
                 conn.commit()
+
 
 def load_fact_ventas():
     with engine.begin() as conn:

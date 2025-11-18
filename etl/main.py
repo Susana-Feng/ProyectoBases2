@@ -1,39 +1,149 @@
+import signal
+import sys
+
 from extract.mongo import extract_mongo
-from transform.mongo import transform_mongo
+from extract.mssql import extract_mssql
 from load.general import load_datawarehouse
+from transform.mongo import transform_mongo
+from transform.mssql import transform_mssql
+
+# Variable global para controlar interrupciones
+interrupted = False
+
+
+def signal_handler(sig, frame):
+    """Maneja Ctrl+C de forma elegante"""
+    global interrupted
+    print("\n\n⚠️  Interrupción detectada (Ctrl+C). Finalizando proceso ETL...")
+    interrupted = True
+    sys.exit(0)
+
+
+def check_interrupt():
+    """Verifica si se solicitó interrumpir el proceso"""
+    if interrupted:
+        print("⚠️  Proceso interrumpido por el usuario")
+        sys.exit(0)
+
 
 if __name__ == "__main__":
-    
-    # Extracciones de bases de datos
-    objetos_mongo = extract_mongo()
+    # Configurar manejo de señales
+    signal.signal(signal.SIGINT, signal_handler)
 
-    # Transformaciones de datos
-    transform_mongo(objetos_mongo[0], objetos_mongo[1], objetos_mongo[2])
+    print("=" * 60)
+    print("INICIANDO PROCESO ETL")
+    print("=" * 60)
 
-    # Carga general del datawarehouse
-    load_datawarehouse()
+    try:
+        # ========== EXTRACCIÓN ==========
+        print("\n[1] EXTRACCIÓN DE DATOS")
+        print("-" * 60)
 
-    #pd: aun no se aplican los tipos de cambios pq no se como está el estado del job en stg.orden_items
+        # Extraer datos de MongoDB
+        print("\n[MongoDB] Extrayendo datos...")
+        try:
+            objetos_mongo = extract_mongo()
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error extrayendo de MongoDB: {e}")
+            import traceback
 
-    # Función para resetear el DataWarehouse (eliminar datos cargados de prueba)
-    def reset_datawarehouse():
-        from sqlalchemy import text
-        from configs.connections import get_dw_engine
-        engine = get_dw_engine()
-        sql = """
-            delete from dw.FactVentas
-            delete from dw.DimProducto
-            delete from dw.DimCliente
-            delete from dw.DimTiempo
-            delete from stg.map_producto
-            delete from stg.orden_items
-            delete from stg.clientes
-        """
+            traceback.print_exc()
+            sys.exit(1)
 
-        with engine.begin() as conn:
-            conn.execute(text(sql))
+        # Extraer datos de MS SQL Server
+        print("\n[MS SQL Server] Extrayendo datos...")
+        try:
+            objetos_mssql = extract_mssql()
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error extrayendo de MS SQL Server: {e}")
+            import traceback
 
-    #reset_datawarehouse()
+            traceback.print_exc()
+            sys.exit(1)
+
+        # ========== TRANSFORMACIÓN ==========
+        print("\n[2] TRANSFORMACIÓN DE DATOS")
+        print("-" * 60)
+
+        # Transformar datos de MongoDB
+        print("\n[MongoDB] Transformando datos...")
+        try:
+            transform_mongo(objetos_mongo[0], objetos_mongo[1], objetos_mongo[2])
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error transformando datos de MongoDB: {e}")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+        # Transformar datos de MS SQL Server
+        print("\n[MS SQL Server] Transformando datos...")
+        try:
+            transform_mssql(
+                objetos_mssql[0], objetos_mssql[1], objetos_mssql[2], objetos_mssql[3]
+            )
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error transformando datos de MS SQL Server: {e}")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+        # ========== CARGA ==========
+        print("\n[3] CARGA AL DATA WAREHOUSE")
+        print("-" * 60)
+        try:
+            load_datawarehouse()
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error cargando al Data Warehouse: {e}")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
+
+        print("\n" + "=" * 60)
+        print("✅ PROCESO ETL COMPLETADO EXITOSAMENTE")
+        print("=" * 60)
+
+        # Nota: Los tipos de cambio se aplican mediante los jobs de BCCR
+        # Ejecutar jobs/bccr_tc_historico.py para cargar TCs históricos
+
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Proceso interrumpido por el usuario (Ctrl+C)")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\n\n❌ Error inesperado en el proceso ETL: {e}")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
 
 
-    
+# Función para resetear el DataWarehouse (eliminar datos cargados de prueba)
+def reset_datawarehouse():
+    from sqlalchemy import text
+
+    from configs.connections import get_dw_engine
+
+    engine = get_dw_engine()
+    sql = """
+        DELETE FROM dw.FactVentas;
+        DELETE FROM dw.DimProducto;
+        DELETE FROM dw.DimCliente;
+        DELETE FROM dw.DimTiempo;
+        DELETE FROM stg.map_producto;
+        DELETE FROM stg.orden_items;
+        DELETE FROM stg.clientes;
+    """
+
+    with engine.begin() as conn:
+        conn.execute(text(sql))
+
+
+# Descomentar la siguiente línea para resetear el DataWarehouse
+# reset_datawarehouse()
