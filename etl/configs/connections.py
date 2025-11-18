@@ -3,9 +3,11 @@ Configuración de conexiones a bases de datos.
 """
 
 import os
-from sqlalchemy import create_engine
+
 from dotenv import load_dotenv
 from pymongo import MongoClient
+from sqlalchemy import create_engine
+
 # Cargar variables de entorno
 load_dotenv(".env.local")
 
@@ -15,6 +17,13 @@ MSSQL_DW_PORT = os.getenv("MSSQL_DW_PORT", "1433")
 MSSQL_DW_USER = os.getenv("MSSQL_DW_USER", "your-username")
 MSSQL_DW_PASS = os.getenv("MSSQL_DW_PASS", "your-password")
 MSSQL_DW_DB = os.getenv("MSSQL_DW_DB", "your-database-name")
+
+# Configuración MSSQL DB_SALES (fuente transaccional)
+MSSQL_SALES_HOST = os.getenv("MSSQL_SALES_HOST", "your-server-host")
+MSSQL_SALES_PORT = os.getenv("MSSQL_SALES_PORT", "1433")
+MSSQL_SALES_USER = os.getenv("MSSQL_SALES_USER", "your-username")
+MSSQL_SALES_PASS = os.getenv("MSSQL_SALES_PASS", "your-password")
+MSSQL_SALES_DB = os.getenv("MSSQL_SALES_DB", "DB_SALES")
 
 # Configuración BCCR WebService
 BCCR_TOKEN = os.getenv("BCCR_TOKEN", "your-bccr-token")
@@ -30,6 +39,7 @@ BCCR_INDICADOR_VENTA = "318"  # Venta USD/CRC
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB = os.getenv("MONGO_DB")
 
+
 def get_dw_engine():
     """
     Crea y retorna un engine de SQLAlchemy para la BD del Data Warehouse (MSSQL).
@@ -42,8 +52,21 @@ def get_dw_engine():
     return create_engine(connection_string, echo=False)
 
 
+def get_mssql_sales_engine():
+    """
+    Crea y retorna un engine de SQLAlchemy para la BD transaccional DB_SALES (MSSQL).
+    """
+    connection_string = (
+        f"mssql+pyodbc://{MSSQL_SALES_USER}:{MSSQL_SALES_PASS}@"
+        f"{MSSQL_SALES_HOST}:{MSSQL_SALES_PORT}/{MSSQL_SALES_DB}"
+        f"?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+    )
+    return create_engine(connection_string, echo=False)
+
+
 def get_mongo_client():
     return MongoClient(MONGO_URI)
+
 
 def get_mongo_database():
     client = get_mongo_client()
@@ -53,5 +76,6 @@ def get_mongo_database():
 if __name__ == "__main__":
     print("Configuraciones cargadas exitosamente.")
     print(f"MSSQL DW: {MSSQL_DW_HOST}:{MSSQL_DW_PORT}/{MSSQL_DW_DB}")
+    print(f"MSSQL Sales: {MSSQL_SALES_HOST}:{MSSQL_SALES_PORT}/{MSSQL_SALES_DB}")
     print(f"BCCR Endpoint: {BCCR_ENDPOINT}")
-    print(f"MongoDB URI: {MONGO_URI} - - - - Database: {MONGO_DB}") 
+    print(f"MongoDB URI: {MONGO_URI} - - - - Database: {MONGO_DB}")
