@@ -41,27 +41,11 @@ interface Cliente {
   fecha_registro: string;
 }
 
-interface Item {
-  producto_id: string;
-  cantidad: number;
-  precio_unitario: number;
-  producto?: {
-    nombre: string;
-    producto_id: string;
-  };
-}
+// URLs de Supabase
+const apiBaseUrl = "http://localhost:8002/api/supabase/";
+const clientesUrl = `${apiBaseUrl}clients/`;
+const productosUrl = `${apiBaseUrl}products/`;
 
-// URLs
-const apiBaseUrl = "https://dytnjcifruchjyrxguqe.supabase.co/rest/v1/";
-const clientesUrl = `${apiBaseUrl}cliente?select=*`;
-const productosUrl = `${apiBaseUrl}producto?select=*`;
-
-// Headers de Supabase
-const supabaseHeaders = {
-  "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
-  "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-  "Content-Type": "application/json"
-};
 
 /* ----------------------------- Props ----------------------------- */
 interface EditOrderDialogProps {
@@ -75,7 +59,6 @@ interface EditOrderDialogProps {
 async function fetchJson(url: string, method: string = "GET", payload?: any) {
   const res = await fetch(url, {
     method,
-    headers: supabaseHeaders,
     body: payload ? JSON.stringify(payload) : undefined
   });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);

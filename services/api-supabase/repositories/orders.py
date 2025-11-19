@@ -77,6 +77,7 @@ def get_orders(offset: int = 0, limit: int = 10):
                 supabase.table("orden_completa")
                 .select("*")
                 .range(offset, offset + limit - 1)
+                .order("fecha", desc=True)
                 .execute()
             )
 

@@ -68,12 +68,6 @@ const apiBaseUrl = "http://localhost:8002/api/supabase/";
 const clientesUrl = `${apiBaseUrl}clients/`;
 const productosUrl = `${apiBaseUrl}products/`;
 
-// Headers de Supabase
-const supabaseHeaders = {
-  "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
-  "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-  "Content-Type": "application/json"
-};
 
 interface CreateOrderDialogProps {
   open: boolean;
@@ -84,7 +78,6 @@ interface CreateOrderDialogProps {
 async function fetchJson(url: string, method: string = "GET", payload?: any) {
   const res = await fetch(url, {
     method,
-    headers: supabaseHeaders,
     body: payload ? JSON.stringify(payload) : undefined
   });
   if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`);
