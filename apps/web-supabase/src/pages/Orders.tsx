@@ -225,7 +225,6 @@ export default function Orders() {
 
       const fechaISO = new Date(edited.fecha).toISOString();
       
-      // 🔹 CORREGIDO: El orden_id va en la URL, no en el body
       const body = {
         "cliente_id": edited.cliente.cliente_id,
         "fecha": fechaISO,
@@ -239,7 +238,6 @@ export default function Orders() {
         }))
       };
 
-      // 🔹 CORREGIDO: Incluir el orden_id en la URL
       const url = `${actualizarOrdenCompleta}${edited.orden_id}`;
       console.log('Enviando datos para actualizar a URL:', url);
       console.log('Body:', body);

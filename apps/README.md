@@ -30,16 +30,6 @@ apps/web-mongo/
 └─ vite.config.ts
 ```
 
-## Variables de entorno importantes
-
-- VITE_API_BASE — URL base para las peticiones al backend (p. ej. `http://localhost:8000`).
-
-Coloca variables en un archivo `.env` o `.env.local` dentro de la carpeta del UI (p. ej. `apps/web-mongo/ui/.env`). Ejemplo:
-
-```
-VITE_API_BASE=http://localhost:8000
-```
-
 ## Instalación
 
 Ejecuta lo siguiente:
