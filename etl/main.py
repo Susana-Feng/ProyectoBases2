@@ -6,6 +6,7 @@ from extract.mssql import extract_mssql
 from load.general import load_datawarehouse
 from transform.mongo import transform_mongo
 from transform.mssql import transform_mssql
+from association_rules.load_rules import carga_reglas_asociacion
 
 # Variable global para controlar interrupciones
 interrupted = False
@@ -35,6 +36,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     try:
+
         # ========== EXTRACCIÓN ==========
         print("\n[1] EXTRACCIÓN DE DATOS")
         print("-" * 60)
@@ -110,6 +112,11 @@ if __name__ == "__main__":
         print("✅ PROCESO ETL COMPLETADO EXITOSAMENTE")
         print("=" * 60)
 
+        # ========== REGLAS DE ASOCIACIÓN ==========
+        carga_reglas_asociacion()
+
+
+
         # Nota: Los tipos de cambio se aplican mediante los jobs de BCCR
         # Ejecutar jobs/bccr_tc_historico.py para cargar TCs históricos
 
@@ -139,6 +146,7 @@ def reset_datawarehouse():
         DELETE FROM stg.map_producto;
         DELETE FROM stg.orden_items;
         DELETE FROM stg.clientes;
+        DELETE FROM stg.tipo_cambio;
     """
 
     with engine.begin() as conn:
@@ -146,4 +154,4 @@ def reset_datawarehouse():
 
 
 # Descomentar la siguiente línea para resetear el DataWarehouse
-# reset_datawarehouse()
+#reset_datawarehouse()
