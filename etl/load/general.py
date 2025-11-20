@@ -74,7 +74,8 @@ query_select_map_producto = """
         P.source_code AS SourceKey,
         P.nombre_norm AS Nombre,
         P.categoria_norm AS Categoria,
-        P.es_servicio AS EsServicio
+        P.es_servicio AS EsServicio,
+		P.sku_oficial AS SKU
     FROM
          stg.map_producto AS P
 """
@@ -212,7 +213,7 @@ def load_dim_producto():
                 conn.execute(text(query_insert_dimProducto_dw), {
                         'SourceSystem':producto.SourceSystem, 
                         'SourceKey': producto.SourceKey,
-                        'SKU': producto.SourceKey, 
+                        'SKU': producto.SKU, 
                         'Nombre': producto.Nombre, 
                         'Categoria': producto.Categoria,
                         'EsServicio': producto.EsServicio,
