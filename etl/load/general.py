@@ -9,8 +9,8 @@ engine = get_dw_engine()
     ----------------------------------------------------------------------- ''' 
 
 query_insert_DimTime = """
-    DECLARE @FechaInicio DATE = '2024-01-01';
-    DECLARE @FechaFin    DATE = '2025-12-01';
+    DECLARE @FechaInicio DATE = '2022-01-01';
+    DECLARE @FechaFin    DATE = CAST(GETDATE() AS DATE);  -- Fecha actual
 
     ;WITH Fechas AS (
         SELECT @FechaInicio AS Fecha
@@ -132,7 +132,8 @@ query_insert_factVentas = """
         TotalUSD,
         MonedaOriginal,
         PrecioUnitOriginal,
-        TotalOriginal)
+        TotalOriginal,
+        SourceKey)
     SELECT
         T.TiempoID,
         C.ClienteID,
@@ -144,7 +145,8 @@ query_insert_factVentas = """
         O.total_num,
         O.moneda,
         O.precio_unit_raw,
-        O.total_raw
+        O.total_raw,
+        O.source_key_orden
     FROM
         dw.DimTiempo AS T
         ,stg.orden_items AS O

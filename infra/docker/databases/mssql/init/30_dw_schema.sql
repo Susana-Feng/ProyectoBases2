@@ -178,6 +178,7 @@ CREATE TABLE dw.FactVentas (
   -- atributos de análisis
   Canal               NVARCHAR(20) NOT NULL,                 -- WEB | TIENDA | APP | PARTNER
   Fuente              NVARCHAR(20) NOT NULL,                 -- 'mssql' | 'mysql' | 'pg' | 'mongo' | 'neo4j'
+  SourceKey        NVARCHAR(128) NULL,                     -- id original de la orden
   -- medidas
   Cantidad            DECIMAL(18,4) NOT NULL,
   PrecioUnitUSD       DECIMAL(18,6) NOT NULL,                -- precio unitario normalizado a USD
@@ -251,6 +252,18 @@ JOIN dw.DimProducto p ON p.ProductoID = f.ProductoID
 GROUP BY t.Anio, t.Mes, p.SKU, p.Nombre, p.Categoria;
 GO
 
+-- Vista: Transacciones con lista de ítems (para reglas de asociación)
+IF OBJECT_ID('dw.vw_Transacciones','V') IS NOT NULL DROP VIEW dw.vw_Transacciones;
+GO
+CREATE VIEW dw.vw_Transacciones AS
+SELECT
+	V.SourceKey AS transaction_id,
+	STRING_AGG(P.SKU, ', ') AS item
+FROM dw.FactVentas AS V
+INNER JOIN dw.DimProducto P
+ON V.ProductoID = P.ProductoID
+GROUP BY V.SourceKey
+GO
 /* =======================================================================
    9) Reglas prácticas para el llenado (comentarios de guía para el ETL)
    - Cargar DimTiempo 3+ años hacia atrás y adelante según calendario académico
