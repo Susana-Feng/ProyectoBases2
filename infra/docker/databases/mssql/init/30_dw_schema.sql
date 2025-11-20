@@ -219,13 +219,11 @@ CREATE INDEX IX_Metas_AnioMes ON dw.MetasVentas(Anio, Mes);
 IF OBJECT_ID('analytics.AssociationRules','U') IS NOT NULL DROP TABLE analytics.AssociationRules;
 CREATE TABLE analytics.AssociationRules (
   RuleID        BIGINT IDENTITY(1,1) PRIMARY KEY,
-  Antecedent    NVARCHAR(450) NOT NULL,   -- lista de SKU canónicos separados por coma
+  Antecedent    NVARCHAR(450) NOT NULL,   -- lista de SKU canónicos
   Consequent    NVARCHAR(450) NOT NULL,   -- lista de SKU canónicos
   Support       DECIMAL(9,6)   NOT NULL,
   Confidence    DECIMAL(9,6)   NOT NULL,
   Lift          DECIMAL(9,6)   NOT NULL,
-  MinItems      INT            NULL,       -- metadatos opcionales
-  MaxItems      INT            NULL,
   GeneratedAt   DATETIME2(3)   NOT NULL DEFAULT SYSDATETIME()
 );
 CREATE INDEX IX_AR_Consequent ON analytics.AssociationRules(Consequent);
