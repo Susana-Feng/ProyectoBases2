@@ -25,7 +25,7 @@ def limpiar_reglas():
 def preparar_datos_para_insercion(rules):
     #Prepara los datos en formato de diccionarios para inserción
     
-    if rules.empty:
+    if rules is None or rules.empty:
         print("⚠️ No hay reglas para preparar")
         return []
     
@@ -70,7 +70,7 @@ def carga_reglas_asociacion():
     # Obtener reglas
     rules = generar_reglas_asociacion()
     
-    if rules.empty:
+    if rules is None or rules.empty:
         print("❌ No se generaron reglas de asociación.")
         return
 
