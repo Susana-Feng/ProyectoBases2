@@ -383,31 +383,3 @@ BEGIN
 END;
 
 GO
-
-/* =======================================================================
-   10) Reglas prácticas para el llenado (comentarios de guía para el ETL)
-   - Cargar DimTiempo 3+ años hacia atrás y adelante según calendario académico
-   - Poblar TC desde stg.tipo_cambio en DimTiempo (por fecha)
-   ======================================================================= */
-
-DECLARE @FechaInicio DATE = '2022-01-01';
-DECLARE @FechaFin    DATE = CAST(GETDATE() AS DATE);  -- Fecha actual
-
-;WITH Fechas AS (
-    SELECT @FechaInicio AS Fecha
-    UNION ALL
-    SELECT DATEADD(DAY, 1, Fecha)
-    FROM Fechas
-    WHERE Fecha < @FechaFin
-)
-INSERT INTO dw.DimTiempo (
-    TiempoID, Fecha, Anio, Mes, Dia
-)
-SELECT
-    CONVERT(INT, FORMAT(Fecha, 'yyyyMMdd')) AS TiempoID,
-    Fecha,
-    YEAR(Fecha)  AS Anio,
-    MONTH(Fecha) AS Mes,
-    DAY(Fecha)   AS Dia
-FROM Fechas
-OPTION (MAXRECURSION 0);
