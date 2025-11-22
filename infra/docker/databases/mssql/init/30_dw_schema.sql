@@ -271,7 +271,8 @@ GO
 IF OBJECT_ID('dw.sp_obtener_consecuentes_por_skus','P') IS NOT NULL
     DROP PROCEDURE dw.sp_obtener_consecuentes_por_skus;
 GO
-CREATE OR ALTER   PROCEDURE dw.sp_obtener_consecuentes_por_skus
+
+CREATE OR ALTER PROCEDURE dw.sp_obtener_consecuentes_por_skus
     @lista_skus NVARCHAR(MAX)
 AS
 BEGIN
@@ -314,13 +315,21 @@ BEGIN
                 INNER JOIN #skus_entrada se ON LTRIM(RTRIM(c.value)) = se.sku
                 WHERE LTRIM(RTRIM(c.value)) <> ''
             ) as consecuentes_en_lista,
-            -- Obtener SourceKeys de los SKUs de entrada
+            -- Obtener SourceKeys de los antecedentes (SKUs de entrada)
             (
                 SELECT dp.SourceKey
                 FROM dw.DimProducto dp
                 INNER JOIN #skus_entrada se ON dp.SKU = se.sku
                 FOR JSON PATH
-            ) AS source_keys
+            ) AS source_keys_antecedentes,
+            -- Obtener SourceKeys de los consecuentes
+            (
+                SELECT DISTINCT dp.SourceKey
+                FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
+                INNER JOIN dw.DimProducto dp ON LTRIM(RTRIM(c.value)) = dp.SKU
+                WHERE LTRIM(RTRIM(c.value)) <> ''
+                FOR JSON PATH
+            ) AS source_keys_consecuentes
         FROM analytics.AssociationRules r
     )
     SELECT TOP 5
@@ -329,7 +338,8 @@ BEGIN
         Support,
         Confidence,
         Lift,
-        source_keys AS SourceKeys
+        source_keys_antecedentes AS SourceKeysAntecedentes,
+        source_keys_consecuentes AS SourceKeysConsecuentes
     FROM ReglasFiltradas
     WHERE total_antecedentes > 0 
         AND antecedentes_en_lista = total_antecedentes  -- TODOS los antecedentes en la lista
@@ -375,7 +385,29 @@ END;
 GO
 
 /* =======================================================================
-   9) Reglas prácticas para el llenado (comentarios de guía para el ETL)
+   10) Reglas prácticas para el llenado (comentarios de guía para el ETL)
    - Cargar DimTiempo 3+ años hacia atrás y adelante según calendario académico
    - Poblar TC desde stg.tipo_cambio en DimTiempo (por fecha)
    ======================================================================= */
+
+DECLARE @FechaInicio DATE = '2022-01-01';
+DECLARE @FechaFin    DATE = CAST(GETDATE() AS DATE);  -- Fecha actual
+
+;WITH Fechas AS (
+    SELECT @FechaInicio AS Fecha
+    UNION ALL
+    SELECT DATEADD(DAY, 1, Fecha)
+    FROM Fechas
+    WHERE Fecha < @FechaFin
+)
+INSERT INTO dw.DimTiempo (
+    TiempoID, Fecha, Anio, Mes, Dia
+)
+SELECT
+    CONVERT(INT, FORMAT(Fecha, 'yyyyMMdd')) AS TiempoID,
+    Fecha,
+    YEAR(Fecha)  AS Anio,
+    MONTH(Fecha) AS Mes,
+    DAY(Fecha)   AS Dia
+FROM Fechas
+OPTION (MAXRECURSION 0);
