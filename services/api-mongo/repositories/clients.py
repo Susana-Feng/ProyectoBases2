@@ -21,9 +21,9 @@ class clientsRepository:
         return None
 
     @staticmethod
-    def get_all(skip: int = 0, limit: int = 10) -> List[dict]:
+    def get_all() -> List[dict]:
         clients = []
-        cursor = clients_collection.find().skip(skip).limit(limit)
+        cursor = clients_collection.find()
         for doc in cursor:
             doc["_id"] = str(doc["_id"])
             clients.append(doc)

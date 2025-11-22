@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from config.database import get_mongo_client
+from config.database import get_mongo_client, get_mssql_connection
 
 from routers.orders import router as orders_router
 from routers.clients import router as clients_router
@@ -23,6 +23,7 @@ app.add_middleware(
 async def startup_event():
     # initialize and store mongo client for reuse
     app.state.mongo_client = get_mongo_client()
+    app.state.mssql_connection = get_mssql_connection()
 
 
 @app.on_event("shutdown")
@@ -31,6 +32,12 @@ async def shutdown_event():
     if client:
         try:
             client.close()
+        except Exception:
+            pass
+    mssql_connection = getattr(app.state, "mssql_connection", None)
+    if mssql_connection:
+        try:
+            mssql_connection.close()
         except Exception:
             pass
 

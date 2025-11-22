@@ -262,6 +262,118 @@ INNER JOIN dw.DimProducto P
 ON V.ProductoID = P.ProductoID
 GROUP BY V.SourceKey
 GO
+
+/* =======================================================================
+   9) Stored Procedures
+   ======================================================================= */
+
+-- 9.1) Obtener los principales 5 consecuentes para una lista dada de SKUs
+IF OBJECT_ID('dw.sp_obtener_consecuentes_por_skus','P') IS NOT NULL
+    DROP PROCEDURE dw.sp_obtener_consecuentes_por_skus;
+GO
+CREATE OR ALTER   PROCEDURE dw.sp_obtener_consecuentes_por_skus
+    @lista_skus NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Tabla temporal para SKUs de entrada
+    CREATE TABLE #skus_entrada (sku NVARCHAR(50) PRIMARY KEY);
+    
+    INSERT INTO #skus_entrada (sku)
+    SELECT DISTINCT LTRIM(RTRIM(value)) 
+    FROM STRING_SPLIT(@lista_skus, ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+
+    WITH ReglasFiltradas AS (
+        SELECT 
+            r.RuleID,
+            r.Antecedent,
+            r.Consequent,
+            r.Support,
+            r.Confidence,
+            r.Lift,
+            -- Contar antecedentes totales vs antecedentes en la lista
+            (
+                SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
+                FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') 
+                WHERE LTRIM(RTRIM(value)) <> ''
+            ) as total_antecedentes,
+            (
+                SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
+                FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') a
+                INNER JOIN #skus_entrada se ON LTRIM(RTRIM(a.value)) = se.sku
+                WHERE LTRIM(RTRIM(a.value)) <> ''
+            ) as antecedentes_en_lista,
+            -- Contar elementos en la lista de entrada
+            (SELECT COUNT(*) FROM #skus_entrada) as total_en_lista,
+            -- Verificar si algún consecuente está en la lista de entrada
+            (
+                SELECT COUNT(*)
+                FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
+                INNER JOIN #skus_entrada se ON LTRIM(RTRIM(c.value)) = se.sku
+                WHERE LTRIM(RTRIM(c.value)) <> ''
+            ) as consecuentes_en_lista,
+            -- Obtener SourceKeys de los SKUs de entrada
+            (
+                SELECT dp.SourceKey
+                FROM dw.DimProducto dp
+                INNER JOIN #skus_entrada se ON dp.SKU = se.sku
+                FOR JSON PATH
+            ) AS source_keys
+        FROM analytics.AssociationRules r
+    )
+    SELECT TOP 5
+        Antecedent,
+        Consequent,
+        Support,
+        Confidence,
+        Lift,
+        source_keys AS SourceKeys
+    FROM ReglasFiltradas
+    WHERE total_antecedentes > 0 
+        AND antecedentes_en_lista = total_antecedentes  -- TODOS los antecedentes en la lista
+        AND total_en_lista = total_antecedentes         -- MISMA CANTIDAD de elementos (lista exacta)
+        AND consecuentes_en_lista = 0                   -- NINGÚN consecuente en la lista
+    ORDER BY Confidence DESC, Lift DESC;
+
+    DROP TABLE #skus_entrada;
+END;
+GO
+
+-- 9.2) Obtener SKUs equivalentes a una lista de códigos MongoDB
+IF OBJECT_ID('dw.sp_obtener_skus_por_codigos_mongo','P') IS NOT NULL
+    DROP PROCEDURE dw.sp_obtener_skus_por_codigos_mongo;
+GO
+CREATE OR ALTER PROCEDURE dw.sp_obtener_skus_por_codigos_mongo
+    @lista_codigos_mongo NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Tabla temporal para códigos MongoDB de entrada
+    CREATE TABLE #codigos_mongo (codigo_mongo NVARCHAR(128) PRIMARY KEY);
+    
+    -- Insertar y limpiar los códigos MongoDB
+    INSERT INTO #codigos_mongo (codigo_mongo)
+    SELECT DISTINCT LTRIM(RTRIM(value)) 
+    FROM STRING_SPLIT(@lista_codigos_mongo, ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+
+    -- Consulta para obtener los SKUs equivalentes
+    SELECT 
+        cm.codigo_mongo AS CodigoMongo,
+        dp.SKU
+    FROM #codigos_mongo cm
+    LEFT JOIN dw.DimProducto dp ON cm.codigo_mongo = dp.SourceKey
+    ORDER BY dp.SKU, cm.codigo_mongo;
+
+    -- Limpiar tabla temporal
+    DROP TABLE #codigos_mongo;
+END;
+
+GO
+
 /* =======================================================================
    9) Reglas prácticas para el llenado (comentarios de guía para el ETL)
    - Cargar DimTiempo 3+ años hacia atrás y adelante según calendario académico

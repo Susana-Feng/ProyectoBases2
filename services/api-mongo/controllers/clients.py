@@ -8,8 +8,8 @@ clients_repository = clientsRepository()
 
 class clientsController:
     @staticmethod
-    def get_all_clients(skip: int = 0, limit: int = 10):
-        clients = clients_repository.get_all(skip=skip, limit=limit)
+    def get_all_clients():
+        clients = clients_repository.get_all()
         total = len(clients)
         # ensure any nested ObjectId values are converted to str
         def _convert(o: Any):
@@ -22,7 +22,7 @@ class clientsController:
             return o
 
         safe_clients = [_convert(doc) for doc in clients]
-        return {"total": total, "skip": skip, "limit": limit, "data": safe_clients}
+        return {"total": total, "skip": 0, "limit": 0, "data": safe_clients}
 
     @staticmethod
     def get_cliente_by_id(cliente_id: str):
