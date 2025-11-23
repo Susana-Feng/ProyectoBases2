@@ -3,10 +3,12 @@ Configuración de conexiones a bases de datos.
 """
 
 import os
+import psycopg2
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from sqlalchemy import create_engine
+from neo4j import GraphDatabase
 
 # Cargar variables de entorno
 load_dotenv(".env.local")
@@ -38,6 +40,15 @@ BCCR_INDICADOR_VENTA = "318"  # Venta USD/CRC
 # Variables de conexión MongoDB
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB = os.getenv("MONGO_DB")
+
+# Variables de conexión Supabase
+SUPABASE_URI = os.getenv("SUPABASE_URI")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Variables de conexión Neo4j
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 
 def get_dw_engine():
@@ -71,6 +82,19 @@ def get_mongo_client():
 def get_mongo_database():
     client = get_mongo_client()
     return client[MONGO_DB]
+
+def get_supabase_connection():
+    url = SUPABASE_URI
+    conn = psycopg2.connect(url)
+    return conn
+
+def get_neo4j_driver():
+    uri = NEO4J_URI
+    user = NEO4J_USERNAME
+    password = NEO4J_PASSWORD
+
+    driver = GraphDatabase.driver(uri, auth=(user, password))
+    return driver
 
 
 if __name__ == "__main__":
