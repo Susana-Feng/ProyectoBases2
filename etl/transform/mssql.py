@@ -274,9 +274,13 @@ def transform_mssql(clientes, productos, ordenes, orden_detalles):
             # Mostrar progreso cada 100 items
             if items_procesados % 100 == 0:
                 print(
-                    f"  Procesados: {items_procesados}/{len(orden_detalles)} items..."
+                    f"\r  Procesados: {items_procesados}/{len(orden_detalles)} items...",
+                    end="",
+                    flush=True,
                 )
 
+    # Nueva línea al finalizar
+    print()
     print(f"[MSSQL Transform] Transformación completada:")
     print(f"  - Productos mapeados: {len(productos)}")
     print(f"  - Clientes procesados: {len(clientes)}")
