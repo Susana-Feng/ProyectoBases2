@@ -2,30 +2,62 @@ import csv
 import os
 import psycopg2
 
-from dotenv import load_dotenv
-from pymongo import MongoClient
-from sqlalchemy import create_engine
-from neo4j import GraphDatabase
+from etl.configs.connections import get_supabase_client, get_mongo_client, get_neo4j_driver
+from datetime import datetime
 
-# Cargar variables de entorno
-load_dotenv(".env.local")
+# Insercion a supabase
+def cargar_csv_a_supabase(csv_file_path: str):
+    # Conectar a Supabase con tu función
+    supabase = get_supabase_client()
 
+    TABLE_NAME = "cliente"
 
-# Variables de conexión Neo4j
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+    # Leer CSV
+    with open(csv_file_path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
 
+    print(f"Leídas {len(rows)} filas del CSV")
 
-def get_neo4j_driver():
-    uri = NEO4J_URI
-    user = NEO4J_USERNAME
-    password = NEO4J_PASSWORD
+    registros = []
+    omitidos = 0
 
-    driver = GraphDatabase.driver(uri, auth=(user, password))
-    return driver
+    for row in rows:
+        email = row["email"].strip()
 
+        # Verificar si ese email ya existe en Supabase
+        existente = supabase.table(TABLE_NAME).select("email").eq("email", email).execute()
 
+        if existente.data: # si trae datos, ya existe
+            print(f"El email ya exite, se omite: {email}")
+            omitidos += 1
+            continue
+        
+        # Validar la fecha
+        try:
+            fecha_registro = datetime.strptime(row["fecha_registro"], "%Y-%m-%d").date()
+        except ValueError:
+            print(f"⚠ Fecha inválida en fila: {row}")
+            continue
+
+        registros.append({
+            "nombre": row["nombre"].strip(),
+            "email": row["email"].strip(),
+            "genero": row["genero"].strip(),
+            "pais": row["pais"].strip(),
+            "fecha_registro": fecha_registro.isoformat()
+        })
+
+    if registros:
+        # Insertar en Supabase solo lo nuevo
+        respuesta = supabase.table(TABLE_NAME).insert(registros).execute()
+        print(f"Insertados correctamente: {len(registros)} registros")
+    else:
+        print("No hay registros nuevos para insertar.")
+
+# Insercion a mongo
+
+# Insercion a neo4j
 def insertar_cliente(tx, cliente):
     query = """
     MERGE (c:Cliente {id: $id})
@@ -34,7 +66,6 @@ def insertar_cliente(tx, cliente):
         c.pais = $pais
     """
     tx.run(query, **cliente)
-
 
 def cargar_csv_a_neo4j(csv_file):
     driver = get_neo4j_driver()
@@ -57,10 +88,15 @@ def cargar_csv_a_neo4j(csv_file):
 
 
 def main():
+    # Supabase
+    clients_supabase = "./data/clients/supabase/clients_supabase.csv"
+    cargar_csv_a_supabase(clients_supabase)
+    print("Clientes cargados a supabase")
+
+    # Neo4j
     clients_neo4j = "./data/clients/neo4j/clients_neo4j.csv"
     cargar_csv_a_neo4j(clients_neo4j)
     print("Clientes cargados a neo4j")
-    print(NEO4J_URI)
 
 if __name__ == "__main__":
     main()

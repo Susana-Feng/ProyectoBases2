@@ -153,3 +153,5 @@ data/raw/**/*
 
 venv/
 .venv/
+
+.env.local
