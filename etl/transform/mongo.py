@@ -186,7 +186,9 @@ def insert_orden_items_stg(items_flat):
         # Mostrar progreso cada 100 items
         if procesados % 100 == 0 or procesados == total_items:
             print(
-                f"  Procesados: {procesados}/{total_items} items (errores: {errores})..."
+                f"\r  Procesados: {procesados}/{total_items} items (errores: {errores})...",
+                end="",
+                flush=True,
             )
         # Validar y convertir fecha
         fecha_raw = i.get("fecha")
@@ -256,6 +258,8 @@ def insert_orden_items_stg(items_flat):
             )
             conn.commit()
 
+    # Nueva línea al finalizar
+    print()
     if errores > 0:
         print(f"⚠️  Items procesados con {errores} errores saltados")
 
@@ -271,7 +275,9 @@ def insert_clientes_stg(clientes):
         # Mostrar progreso cada 50 clientes
         if procesados % 50 == 0 or procesados == total_clientes:
             print(
-                f"  Procesados: {procesados}/{total_clientes} clientes (errores: {errores})..."
+                f"\r  Procesados: {procesados}/{total_clientes} clientes (errores: {errores})...",
+                end="",
+                flush=True,
             )
         source_code = str(cliente.get("_id"))  # ObjectId → string
 
@@ -319,6 +325,8 @@ def insert_clientes_stg(clientes):
             errores += 1
             continue
 
+    # Nueva línea al finalizar
+    print()
     if errores > 0:
         print(f"⚠️  Clientes procesados con {errores} errores saltados")
 
