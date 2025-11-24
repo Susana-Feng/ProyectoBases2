@@ -1,8 +1,7 @@
 import csv
-import os
-import psycopg2
+import ast
 
-from etl.configs.connections import get_supabase_client, get_mongo_client, get_neo4j_driver
+from etl.configs.connections import get_supabase_client, get_mongo_database, get_neo4j_driver
 from datetime import datetime
 
 # Insercion a supabase
@@ -56,6 +55,59 @@ def cargar_csv_a_supabase(csv_file_path: str):
         print("No hay registros nuevos para insertar.")
 
 # Insercion a mongo
+def cargar_csv_a_mongo(csv_file_path: str, collection_name: str):
+    """
+    Inserta datos desde un CSV a MongoDB usando la función de conexión get_mongo_database.
+    """
+    db = get_mongo_database()
+    client_collection = db["clientes"]
+
+    with open(csv_file_path, encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        registros = []
+
+        for row in reader:
+            email = row["email"].strip()
+
+            # Verificar si ya existe el email
+            if client_collection.find_one({"email": email}):
+                print(f"Email ya existe, se omite: {email}")
+                continue
+
+            # Parsear preferencias de string a dict
+            try:
+                preferencias = ast.literal_eval(row["preferencias"])
+            except Exception as e:
+                print(f"⚠ Error parseando preferencias: {row['preferencias']} → se ignora fila")
+                continue
+
+            # Parsear fecha de creación
+            try:
+                creado = row["creado"]
+                # Si viene en formato {"$date": "YYYY-MM-DD"}
+                if creado.startswith("{"):
+                    creado_dict = ast.literal_eval(creado)
+                    creado = datetime.strptime(creado_dict["$date"], "%Y-%m-%d")
+                else:
+                    creado = datetime.strptime(creado, "%Y-%m-%d")
+            except Exception as e:
+                print(f"⚠ Fecha inválida: {row['creado']} → se ignora fila")
+                continue
+
+            registros.append({
+                "nombre": row["nombre"].strip(),
+                "email": row["email"].strip(),
+                "genero": row["genero"].strip(),
+                "pais": row["pais"].strip(),
+                "preferencias": preferencias,
+                "creado": creado
+            })
+
+    if registros:
+        result = client_collection.insert_many(registros)
+        print(f"Insertados correctamente {len(result.inserted_ids)} registros en '{collection_name}'")
+    else:
+        print("No se insertó ningún registro.")
 
 # Insercion a neo4j
 def insertar_cliente(tx, cliente):
@@ -92,6 +144,11 @@ def main():
     clients_supabase = "./data/clients/supabase/clients_supabase.csv"
     cargar_csv_a_supabase(clients_supabase)
     print("Clientes cargados a supabase")
+
+    # Mongo
+    clients_mongo = "./data/clients/mongo/clients_mongo.csv"
+    cargar_csv_a_mongo(clients_mongo, "clientes")
+    print("Clientes cargados a mongo")
 
     # Neo4j
     clients_neo4j = "./data/clients/neo4j/clients_neo4j.csv"
