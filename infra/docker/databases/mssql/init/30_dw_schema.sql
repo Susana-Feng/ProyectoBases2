@@ -72,7 +72,7 @@ CREATE TABLE stg.orden_items (
   source_key_item   NVARCHAR(128) NULL,            -- id natural del item si existe
   source_code_prod  NVARCHAR(128) NOT NULL,        -- SKU / codigo_alt / codigo_mongo
   cliente_key       NVARCHAR(128) NULL,            -- cliente_id
-  fecha_raw         NVARCHAR(30)  NOT NULL,        -- fecha original del source (si venía como texto)
+  fecha_raw         NVARCHAR(50)  NOT NULL,        -- fecha original del source (si venía como texto)
   canal_raw         NVARCHAR(32)  NULL,            -- WEB | TIENDA | APP | PARTNER | otros
   moneda            CHAR(3)       NOT NULL,        -- 'USD' | 'CRC'
   cantidad_raw      NVARCHAR(32)  NOT NULL,
