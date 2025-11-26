@@ -1,55 +1,110 @@
-# WebApps & WebLoaders Frontend
+# Frontend de webs
 
-Este README describe el frontend del monorepo que está bajo la carpeta `apps/` (interfaces web construidas con Vite + React + TypeScript).
+Este README describe las aplicaciones frontend del monorepo ubicadas en la carpeta apps/, construidas con Vite + React + TypeScript.
+## 📋 Requisitos
 
-## Requisitos
+    Node.js 18+ (se recomienda versión LTS)
 
-- Node.js 18+ (se recomienda LTS)
-- pnpm (recomendado; también funciona con npm/yarn)
+    pnpm (recomendado; también funciona con npm/yarn)
 
-## ¿Qué hay en `apps/`?
+## 🗂️ Estructura de Apps
 
-Dentro de `apps/` encontrarás varias apps frontales. La principal que contiene el UI para MongoDB es `apps/web-mongo` (puede aparecer con otro nombre en tu repo). Cada UI normalmente contiene:
+Dentro de apps/ encontrarás múltiples aplicaciones frontend especializadas:
+Aplicaciones Disponibles
 
-- `public/` — estáticos públicos (index.html, favicon)
-- `src/` — código fuente (components, pages, assets)
-- `package.json` — scripts y dependencias del frontend
-- `tsconfig*.json`, `vite.config.ts` (configuración de compilación y estilos)
+    apps/web-mongo - Interfaz para MongoDB
 
-Ejemplo (ruta típica):
+    apps/web-supabase - Interfaz para Supabase
 
+    apps/web-neo4j - Interfaz para Neo4j
+
+    apps/web-mssql - Interfaz para Mssql
+
+    apps/web-mysql - Interfaz para Mysql
+
+## Estructura Común de Cada App
+
+Cada aplicación sigue esta estructura típica:
+```bash
+apps/[web-bd]/
+├── public/                 # Archivos estáticos (index.html, favicon)
+├── src/
+│   ├── assets/            # Recursos estáticos (imágenes, estilos)
+│   ├── components/        # Componentes React reutilizables
+│   ├── pages/             # Páginas/views de la aplicación
+│   ├── utils/             # Utilidades y helpers
+│   └── main.tsx           # Punto de entrada
+├── package.json           # Dependencias y scripts
+├── vite.config.ts         # Configuración de Vite
+└── tsconfig.json          # Configuración de TypeScript
 ```
-apps/web-mongo/
-├─ public/
-├─ src/
-│  ├─ assets/
-│  ├─ components/
-│  ├─ pages/
-│  └─ main.tsx
-├─ package.json
-└─ vite.config.ts
+## 🚀 Instalación y Desarrollo
+Instalación Global (si no tienes pnpm)
+```bash
+
+npm install -g pnpm
 ```
-
-## Instalación
-
-Ejecuta lo siguiente:
+## Para cada aplicación:
+### Navegar a la aplicación deseada:
 
 ```bash
-cd apps/web-mongo       # ó apps/web-mysql , apps/web-mssql    
-npm install -g pnpm
+cd apps/web-mongo       # o apps/web-supabase, apps/web-neo4j,  apps/web-mssql, apps/web-mysql
+```
+### Instalar dependencias:
+```bash
+
 pnpm install
+```
+### Ejecutar en modo desarrollo:
+```bash
+
 pnpm dev
 ```
-El frontend estará disponible en:
-```bash
+### URLs de Desarrollo
+
+Cada aplicación estará disponible en:
+
 http://localhost:5173/
+
+Nota: Si ejecutas múltiples apps simultáneamente, Vite asignará puertos diferentes automáticamente.
+### 🛠️ Comandos Disponibles
+
+Cada aplicación incluye estos scripts en su package.json:
+``` bash
+
+pnpm dev          # Servidor de desarrollo
+pnpm build        # Build para producción
+pnpm preview      # Vista previa del build
+pnpm lint         # Linting del código
 ```
+### 📚 Stack Tecnológico
+Core
 
-## Componentes y librerías usadas
+    React 18 + React DOM
 
-- shadcn-ui (componentes UI)
-- lucide-react (iconos)
-- react + react-dom
-- Vite + TypeScript
+    TypeScript
 
-Comprueba `package.json` de la app para la lista completa de dependencias.
+    Vite (bundler y dev server)
+
+UI Components
+
+    shadcn/ui - Sistema de componentes UI
+
+    Tailwind CSS - Framework de estilos
+
+    lucide-react - Librería de iconos
+
+Estado y Utilidades
+
+    React Hook Form - Manejo de formularios
+
+    React Query / SWR - Gestión de estado del servidor
+
+    Zod - Validación de esquemas
+
+### 🔧 Configuración
+Variables de Entorno
+
+Cada aplicación puede requerir variables específicas. Consulta el archivo .env.example en cada directorio de aplicación.
+TypeScript
+
