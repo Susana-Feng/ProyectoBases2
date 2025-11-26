@@ -6,3 +6,4 @@ sqlalchemy
 pandas
 faker
 psycopg2-binary
+pyodbc
