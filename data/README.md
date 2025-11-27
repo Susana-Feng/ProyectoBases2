@@ -1,3 +1,26 @@
-# Crea un archivo .env.local dentro de la carpeta /data, copia y pega los mismo datos usados en el .env.local de la carpeta /etl
+# Generador de Datos
 
-# Preferiblemente correr dentro de un entorno virtual cuya raíz sea la carpeta /data
+## Configuración
+
+1. Crea un archivo `.env.local` dentro de la carpeta `/data`
+2. Copia y pega los mismos datos usados en el `.env.local` de la carpeta `/etl`
+
+## Instalación de dependencias
+
+```bash
+uv sync
+```
+
+## Ejecución
+
+Para ejecutar el generador de datos:
+
+```bash
+uv run generate.py
+```
+
+O alternativamente:
+
+```bash
+uv run python generate.py
+```

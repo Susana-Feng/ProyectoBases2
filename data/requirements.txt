@@ -1,9 +1,0 @@
-pymongo
-neo4j
-supabase
-python-dotenv
-sqlalchemy
-pandas
-faker
-psycopg2-binary
-pyodbc
