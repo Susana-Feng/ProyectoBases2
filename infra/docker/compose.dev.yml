@@ -52,6 +52,23 @@ services:
       - neo4j-init
       - init
 
+  # MongoDB
+  mongo_sales:
+    extends:
+      file: ./databases/mongo/compose.yaml
+      service: mongo_sales
+    profiles:
+      - mongo
+      - all
+
+  mongo_init:
+    extends:
+      file: ./databases/mongo/compose.yaml
+      service: init_mongo_sales
+    profiles:
+      - mongo-init
+      - init
+
 networks:
   sales_net:
     name: sales_net
@@ -71,3 +88,5 @@ volumes:
     name: neo4j_sales_plugins
   neo4j_sales_import:
     name: neo4j_sales_import
+  mongo_sales_data:
+    name: mongo_sales_data

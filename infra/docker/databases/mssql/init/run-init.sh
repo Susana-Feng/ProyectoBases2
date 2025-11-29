@@ -24,4 +24,12 @@ for f in $(ls -1 /scripts/*.sql 2>/dev/null | sort); do
   run_sql "$f"
 done
 
+SEED_FILE="/seed_data/mssql_data.sql"
+if [ -f "$SEED_FILE" ]; then
+  echo ">> Ejecutando seed $(basename "$SEED_FILE")"
+  run_sql "$SEED_FILE"
+else
+  echo ">> Seed mssql_data.sql no encontrado, se omite"
+fi
+
 echo ">> init_sales OK"

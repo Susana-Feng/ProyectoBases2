@@ -23,4 +23,12 @@ for f in $(ls -1 /scripts/*.sql 2>/dev/null | grep -v "00_database" | sort); do
   run_sql "$f" DB_SALES
 done
 
+SEED_FILE="/seed_data/mysql_data.sql"
+if [ -f "$SEED_FILE" ]; then
+  echo ">> Ejecutando seed $(basename "$SEED_FILE")"
+  run_sql "$SEED_FILE" DB_SALES
+else
+  echo ">> Seed mysql_data.sql no encontrado, se omite"
+fi
+
 echo ">> init_sales OK"

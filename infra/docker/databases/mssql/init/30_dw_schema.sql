@@ -24,6 +24,28 @@ SET ANSI_PADDING ON;
 GO
 
 /* =======================================================================
+   1.5) Limpieza de tablas existentes (en orden correcto de dependencias)
+   ======================================================================= */
+-- Primero: Tablas de hechos y analytics (dependen de dimensiones)
+IF OBJECT_ID('analytics.AssociationRules','U') IS NOT NULL DROP TABLE analytics.AssociationRules;
+IF OBJECT_ID('dw.MetasVentas','U') IS NOT NULL DROP TABLE dw.MetasVentas;
+IF OBJECT_ID('dw.FactVentas','U') IS NOT NULL DROP TABLE dw.FactVentas;
+
+-- Segundo: Dimensiones que dependen de otras dimensiones
+IF OBJECT_ID('dw.DimCliente','U') IS NOT NULL DROP TABLE dw.DimCliente;
+IF OBJECT_ID('dw.DimProducto','U') IS NOT NULL DROP TABLE dw.DimProducto;
+
+-- Tercero: Dimensiones base
+IF OBJECT_ID('dw.DimTiempo','U') IS NOT NULL DROP TABLE dw.DimTiempo;
+
+-- Cuarto: Tablas de staging
+IF OBJECT_ID('stg.orden_items','U') IS NOT NULL DROP TABLE stg.orden_items;
+IF OBJECT_ID('stg.clientes','U') IS NOT NULL DROP TABLE stg.clientes;
+IF OBJECT_ID('stg.tipo_cambio','U') IS NOT NULL DROP TABLE stg.tipo_cambio;
+IF OBJECT_ID('stg.map_producto','U') IS NOT NULL DROP TABLE stg.map_producto;
+GO
+
+/* =======================================================================
    2) Esquemas
    ======================================================================= */
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name='stg') EXEC('CREATE SCHEMA stg');
@@ -39,7 +61,6 @@ GO
    ======================================================================= */
 
 -- 3.1) Puente de equivalencias de producto
-IF OBJECT_ID('stg.map_producto','U') IS NOT NULL DROP TABLE stg.map_producto;
 CREATE TABLE stg.map_producto (
   map_id         INT IDENTITY(1,1) PRIMARY KEY,
   source_system  NVARCHAR(32)  NOT NULL,           -- 'mssql' | 'mysql' | 'pg' | 'mongo' | 'neo4j'
@@ -52,7 +73,6 @@ CREATE TABLE stg.map_producto (
 );
 
 -- 3.2) Tabla de tipos de cambio (para normalizar a USD por fecha de la orden)
-IF OBJECT_ID('stg.tipo_cambio','U') IS NOT NULL DROP TABLE stg.tipo_cambio;
 CREATE TABLE stg.tipo_cambio (
   fecha DATE       NOT NULL,
   de    CHAR(3)    NOT NULL,                       -- 'CRC', 'USD', etc.
@@ -64,7 +84,6 @@ CREATE TABLE stg.tipo_cambio (
 );
 
 -- 3.3) Staging plano de transacciones ítem-a-ítem (opcional pero útil)
-IF OBJECT_ID('stg.orden_items','U') IS NOT NULL DROP TABLE stg.orden_items;
 CREATE TABLE stg.orden_items (
   stg_id            BIGINT IDENTITY(1,1) PRIMARY KEY,
   source_system     NVARCHAR(32)  NOT NULL,        -- ms sql | mysql | pg | mongo | neo4j
@@ -89,7 +108,6 @@ CREATE INDEX IX_stg_items_fecha ON stg.orden_items(fecha_dt);
 CREATE INDEX IX_stg_items_prod  ON stg.orden_items(source_code_prod);
 
 -- 3.4) Staging Clientes
-IF OBJECT_ID('stg.clientes','U') IS NOT NULL DROP TABLE stg.clientes;
 CREATE TABLE stg.clientes (
   stg_id            BIGINT IDENTITY(1,1) PRIMARY KEY,
   source_system     NVARCHAR(32)  NOT NULL,        -- ms sql | mysql | pg | mongo | neo4j
@@ -113,7 +131,6 @@ CREATE TABLE stg.clientes (
    ======================================================================= */
 
 -- 4.1) DimTiempo: incluye TCs prácticos (CRC->USD y USD->CRC) por fecha
-IF OBJECT_ID('dw.DimTiempo','U') IS NOT NULL DROP TABLE dw.DimTiempo;
 CREATE TABLE dw.DimTiempo (
   TiempoID       INT          NOT NULL PRIMARY KEY, 
   Fecha          DATE         NOT NULL UNIQUE, -- YYYYMMDD
@@ -129,7 +146,6 @@ CREATE TABLE dw.DimTiempo (
 CREATE INDEX IX_DimTiempo_YM ON dw.DimTiempo(Anio, Mes);
 
 -- 4.2) DimCliente
-IF OBJECT_ID('dw.DimCliente','U') IS NOT NULL DROP TABLE dw.DimCliente;
 CREATE TABLE dw.DimCliente (
   ClienteID        INT IDENTITY(1,1) PRIMARY KEY,
   FechaCreacionID INT NOT NULL FOREIGN KEY REFERENCES dw.DimTiempo(TiempoID),
@@ -146,7 +162,6 @@ CREATE TABLE dw.DimCliente (
 CREATE INDEX IX_DimCliente_Email ON dw.DimCliente(Email) WHERE Email IS NOT NULL;
 
 -- 4.3) DimProducto (canónica por sku_oficial)
-IF OBJECT_ID('dw.DimProducto','U') IS NOT NULL DROP TABLE dw.DimProducto;
 CREATE TABLE dw.DimProducto (
   ProductoID       INT IDENTITY(1,1) PRIMARY KEY,
   SKU              NVARCHAR(64)  NULL,     -- oficial (puede haber nulos transitorios mientras se mapea)
@@ -168,7 +183,6 @@ CREATE INDEX IX_DimProducto_Categoria ON dw.DimProducto(Categoria);
    - Conservamos moneda y total original + tasa aplicada para trazabilidad
    ======================================================================= */
 
-IF OBJECT_ID('dw.FactVentas','U') IS NOT NULL DROP TABLE dw.FactVentas;
 CREATE TABLE dw.FactVentas (
   FactID              BIGINT IDENTITY(1,1) PRIMARY KEY,
   -- FK a dimensiones
@@ -199,7 +213,6 @@ CREATE INDEX IX_FactVentas_Fuente    ON dw.FactVentas(Fuente);
    6) Metas de ventas (documento: MetasVentas conectada a DimCliente/DimProducto)
    ======================================================================= */
 
-IF OBJECT_ID('dw.MetasVentas','U') IS NOT NULL DROP TABLE dw.MetasVentas;
 CREATE TABLE dw.MetasVentas (
   MetaID     INT IDENTITY(1,1) PRIMARY KEY,
   ClienteID  INT NOT NULL FOREIGN KEY REFERENCES dw.DimCliente(ClienteID),
@@ -216,7 +229,6 @@ CREATE INDEX IX_Metas_AnioMes ON dw.MetasVentas(Anio, Mes);
    7) Resultados de Apriori (para recomendaciones en webs transaccionales)
    ======================================================================= */
 
-IF OBJECT_ID('analytics.AssociationRules','U') IS NOT NULL DROP TABLE analytics.AssociationRules;
 CREATE TABLE analytics.AssociationRules (
   RuleID        BIGINT IDENTITY(1,1) PRIMARY KEY,
   Antecedent    NVARCHAR(450) NOT NULL,   -- lista de SKU canónicos
