@@ -14,11 +14,10 @@ services:
       - "${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo_sales_data:/data/db
-      - ./init:/docker-entrypoint-initdb.d
     networks:
       - sales_net
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "${MONGO_USER:-root}", "-p", "${MONGO_PASS:-YourStrong@Passw0rd1}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 30
