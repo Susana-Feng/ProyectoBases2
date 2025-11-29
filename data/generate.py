@@ -526,7 +526,17 @@ def generate_orders_mysql(num_orders: int, clientes: List[Dict[str, Any]], produ
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
             total_decimal += cantidad * precio
-            precio_str = f"{precio:,.2f}" if random.random() < 0.3 else f"{precio:.2f}"
+            # MySQL: precios como string con formatos variados (comas/puntos)
+            fmt_choice = random.random()
+            if fmt_choice < 0.33:
+                # Formato con coma decimal (europeo): "500,32"
+                precio_str = f"{precio:.2f}".replace(".", ",")
+            elif fmt_choice < 0.66:
+                # Formato con punto decimal y coma de miles: "1,500.32"
+                precio_str = f"{precio:,.2f}"
+            else:
+                # Formato simple con punto decimal: "500.32"
+                precio_str = f"{precio:.2f}"
             order_details.append({
                 "orden_id": i,
                 "producto_id": prod_idx,
@@ -536,7 +546,17 @@ def generate_orders_mysql(num_orders: int, clientes: List[Dict[str, Any]], produ
             })
         if moneda == "CRC":
             total_decimal *= 540
-        total_str = f"{total_decimal:,.2f}" if random.random() < 0.3 else f"{total_decimal:.2f}"
+        # MySQL: totales como string con formatos variados (comas/puntos)
+        fmt_choice = random.random()
+        if fmt_choice < 0.33:
+            # Formato con coma decimal (europeo): "1234,56"
+            total_str = f"{total_decimal:.2f}".replace(".", ",")
+        elif fmt_choice < 0.66:
+            # Formato con punto decimal y coma de miles: "1,234.56"
+            total_str = f"{total_decimal:,.2f}"
+        else:
+            # Formato simple con punto decimal: "1234.56"
+            total_str = f"{total_decimal:.2f}"
         orders.append({
             "id": i,
             "cliente_id": cliente_idx,
@@ -592,7 +612,14 @@ def generate_orders_mssql(num_orders: int, clientes: List[Dict[str, Any]], produ
 
 
 def write_mysql_sql(clientes, productos, orders, details, path: Path) -> None:
-    lines: List[str] = ["USE DB_SALES;", ""]
+    lines: List[str] = [
+        "SET NAMES utf8mb4;",
+        "SET CHARACTER SET utf8mb4;",
+        "SET character_set_connection=utf8mb4;",
+        "",
+        "USE DB_SALES;",
+        ""
+    ]
     for c in clientes:
         nombre = c["nombre"].replace("'", "''")
         correo = c["correo"].replace("'", "''")
