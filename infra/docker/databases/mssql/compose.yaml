@@ -8,10 +8,10 @@ services:
       - ../../../../.env.local
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASS:-YourStrong@Passw0rd1}"
+      MSSQL_SA_PASSWORD: "${MSSQL_PASS:-YourStrong@Passw0rd1}"
       MSSQL_PID: "Developer"
     ports:
-      - "${MSSQL_SA_PORT:-1433}:1433"
+      - "${MSSQL_PORT:-1433}:1433"
     volumes:
       - mssql_sales_data:/var/opt/mssql
       - ./init:/scripts
@@ -32,10 +32,11 @@ services:
     env_file:
       - ../../../../.env.local
     environment:
-      MSSQL_SA_PASSWORD: "${MSSQL_SA_PASS:-YourStrong@Passw0rd1}"
+      MSSQL_SA_PASSWORD: "${MSSQL_PASS:-YourStrong@Passw0rd1}"
       MSSQL_HOST: "mssql_sales"
     volumes:
       - ./init:/scripts
+      - ../../../../data/out:/seed_data:ro
     networks:
       - sales_net
     profiles:

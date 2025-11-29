@@ -39,6 +39,7 @@ services:
       NEO4J_HOST: "neo4j"
     volumes:
       - ./init:/scripts
+      - ../../../../data/out:/seed_data:ro
     networks:
       - sales_net
     profiles:
@@ -58,6 +59,12 @@ services:
               /var/lib/neo4j/bin/cypher-shell -a bolt://$$NEO4J_HOST:${NEO4J_BOLT_PORT:-7687} -u "$$USER" -p "$$PASS" --file "$$f"
           fi
         done
+        if [ -f /seed_data/neo4j_data.cypher ]; then
+          echo ">> Ejecutando seed neo4j_data.cypher"
+          /var/lib/neo4j/bin/cypher-shell -a bolt://$$NEO4J_HOST:${NEO4J_BOLT_PORT:-7687} -u "$$USER" -p "$$PASS" --file /seed_data/neo4j_data.cypher
+        else
+          echo ">> Seed neo4j_data.cypher no encontrado, se omite"
+        fi
 
 volumes:
   neo4j_sales_data:

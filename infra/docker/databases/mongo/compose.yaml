@@ -1,40 +1,41 @@
-name: mysql_sales_stack
+name: mongo_sales_stack
 
 services:
-  mysql_sales:
-    image: mysql:8.0
-    container_name: mysql_sales
+  mongo_sales:
+    image: mongo:7
+    container_name: mongo_sales
     env_file:
       - ../../../../.env.local
     environment:
-      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASS:-YourStrong@Passw0rd1}"
-      MYSQL_DATABASE:      "DB_SALES"
-      MYSQL_USER:          "${MYSQL_USER:-sales_user}"
-      MYSQL_PASSWORD:      "${MYSQL_PASS:-sales_pass_123}"
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_USER:-root}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_PASS:-YourStrong@Passw0rd1}"
+      MONGO_INITDB_DATABASE: "tiendaDB"
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "${MONGO_PORT:-27017}:27017"
     volumes:
-      - mysql_sales_data:/var/lib/mysql
+      - mongo_sales_data:/data/db
       - ./init:/docker-entrypoint-initdb.d
     networks:
       - sales_net
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASS}" ]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 30
 
-  init_sales:
-    image: mysql:8.0
-    container_name: mysql_sales_init
+  init_mongo_sales:
+    image: mongo:7
+    container_name: mongo_sales_init
     depends_on:
-      mysql_sales:
+      mongo_sales:
         condition: service_healthy
     env_file:
       - ../../../../.env.local
     environment:
-      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASS:-YourStrong@Passw0rd1}"
-      MYSQL_HOST:          "mysql_sales"
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_USER:-root}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_PASS:-YourStrong@Passw0rd1}"
+      MONGO_HOST: "mongo_sales"
+      MONGO_DB: "tiendaDB"
     volumes:
       - ./init:/scripts
       - ../../../../data/out:/seed_data:ro
@@ -50,8 +51,8 @@ services:
         bash /scripts/run-init.sh
 
 volumes:
-  mysql_sales_data:
-    name: mysql_sales_data
+  mongo_sales_data:
+    name: mongo_sales_data
 
 networks:
   sales_net:
