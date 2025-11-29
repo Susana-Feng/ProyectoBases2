@@ -46,34 +46,28 @@ services/
    └─ schemas/
 ```
 
-Cada subcarpeta también suele incluir un `requirements.txt` o `package.json` y un `.env.example` cuando aplica.
+Cada subcarpeta incluye su descriptor de dependencias (`pyproject.toml` administrado con uv para Python o `package.json` para TypeScript) y un `.env.example` cuando aplica.
 
 
 ## Cómo ejecutar cada servicio
 
 Las instrucciones muestran tanto Windows (PowerShell) como Linux/macOS cuando difieren. Reemplaza `python` por `python3` si tu sistema lo requiere.
 
-1) API Mongo (FastAPI)
+1) API Mongo (FastAPI + uv)
 
-```powershell
+```bash
 cd services/api-mongo
-python -m venv venv 
-venv\Scripts\activate # Windows
-source venv/bin/activate #Linux
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uv sync                # instala dependencias declaradas en pyproject.toml
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 3002
 ```
 
 
-2) API Neo4j (FastAPI)
+2) API Neo4j (FastAPI + uv)
 
-```powershell
+```bash
 cd services/api-neo4j
-python -m venv venv 
-venv\Scripts\activate # Windows
-source venv/bin/activate #Linux
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8001
+uv sync                # instala dependencias declaradas en pyproject.toml
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 3003
 ```
 
 
@@ -95,15 +89,12 @@ bun install
 bun run --watch src/index.ts
 ```
 
-5) API Supabase (FastAPI — Python)
+5) API Supabase (FastAPI + uv)
 
-```powershell
-cd services/api-neo4j
-python -m venv venv 
-venv\Scripts\activate # Windows
-source venv/bin/activate #Linux
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8002
+```bash
+cd services/api-supabase
+uv sync                # instala dependencias declaradas en pyproject.toml
+uv run uvicorn main:app --reload --host 0.0.0.0 --port 3004
 ```
 
 
