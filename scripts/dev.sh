@@ -215,6 +215,18 @@ install_bun_dependencies() {
 	(cd "$path" && bun install)
 }
 
+install_pnpm_dependencies() {
+	local role=$1
+	local stack=$2
+	local path=$3
+	if [[ ! -f "$path/package.json" ]]; then
+		log_warn "No se encontró package.json para $role $stack, se omite pnpm install"
+		return
+	fi
+	log_info "Instalando dependencias pnpm para $role $stack"
+	(cd "$path" && pnpm install)
+}
+
 start_database() {
 	local stack=$1
 	local init_flag=$2
@@ -414,6 +426,7 @@ start_frontend() {
 			;;
 		pnpm)
 			ensure_command pnpm
+			install_pnpm_dependencies frontend "$stack" "$path"
 			local cmd="PORT=$port pnpm run dev"
 			run_process "frontend-$stack" "$path" "$cmd"
 			;;
