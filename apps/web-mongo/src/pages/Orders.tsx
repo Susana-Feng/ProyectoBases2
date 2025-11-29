@@ -5,6 +5,7 @@ import DarkToggle from "@/components/DarkToggle";
 import { ArrowBigLeftDash, ArrowBigRightDash } from 'lucide-react';
 import { EditOrderDialog } from "@/components/EditOrderDialog";
 import { CreateOrderDialog } from "@/components/CreateOrderDialog";
+import { API_BASE_URL } from "@/lib/env";
 
 type Item = {
   producto_id: string;
@@ -23,7 +24,7 @@ type Orden = {
   metadatos?: { cupon?: string } | null;
 };
 
-const apiBaseUrl = "http://localhost:8000/api/mongo";
+const apiBaseUrl = API_BASE_URL;
 const rutaBase = apiBaseUrl + "/order";
 const rutaCliente = apiBaseUrl + "/clients";
 const rutaProducto = apiBaseUrl + "/products";

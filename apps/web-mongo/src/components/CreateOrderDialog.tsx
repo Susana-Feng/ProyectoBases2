@@ -10,10 +10,11 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
+import { API_BASE_URL } from "@/lib/env";
 
 import type { Orden, Cliente, Producto} from "./EditOrderDialog";
 
-const apiBaseUrl = "http://localhost:8000/api/mongo";
+const apiBaseUrl = API_BASE_URL;
 
 interface CreateOrderDialogProps {
   open: boolean;

@@ -5,6 +5,7 @@ import DarkToggle from "@/components/DarkToggle";
 import { ArrowBigLeftDash, ArrowBigRightDash } from 'lucide-react';
 import { EditOrderDialog } from "@/components/EditOrderDialog";
 import { CreateOrderDialog } from "@/components/CreateOrderDialog";
+import { API_BASE_URL } from "@/lib/env";
 
 export type Item = {
   orden_detalle_id?: string;
@@ -35,11 +36,11 @@ export interface Orden {
   }[];
 }
 
-const apiBaseUrl = "http://localhost:8002/api/supabase/";
-const obtenerOrdenes = `${apiBaseUrl}orders/`;
-const crearOrden = `${apiBaseUrl}orders/`;
-const actualizarOrdenCompleta = `${apiBaseUrl}orders/`;
-const eliminarOrden = `${apiBaseUrl}orders/`;
+const ordersBaseUrl = `${API_BASE_URL}/orders/`;
+const obtenerOrdenes = ordersBaseUrl;
+const crearOrden = ordersBaseUrl;
+const actualizarOrdenCompleta = ordersBaseUrl;
+const eliminarOrden = ordersBaseUrl;
 
 export default function Orders() {
   const [orders, setOrders] = useState<Orden[]>([]);

@@ -5,6 +5,7 @@ import DarkToggle from "@/components/DarkToggle";
 import { ArrowBigLeftDash, ArrowBigRightDash } from 'lucide-react';
 import { EditOrderDialog } from "@/components/EditOrderDialog";
 import { CreateOrderDialog } from "@/components/CreateOrderDialog";
+import { API_BASE_URL } from "@/lib/env";
 
 // --- Nodo Producto ---
 export type Producto = {
@@ -46,8 +47,7 @@ export type Orden = {
   // Atributo opcional no estructural
   metadatos?: { cupon?: string } | null;
 };
-const apiBaseUrl = "http://localhost:8001/api/neo4j";
-const rutaBase = apiBaseUrl + "/orders";
+const rutaBase = `${API_BASE_URL}/orders`;
 
 export default function Orders() {
   const [orders, setOrders] = useState<any[]>([]);
