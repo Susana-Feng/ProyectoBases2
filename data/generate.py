@@ -986,8 +986,9 @@ def generate_orders_neo4j(num_orders: int, clientes: List[Dict[str, Any]], produ
 def write_neo4j_cypher(clientes, productos, orders, rels, path: Path) -> None:
     lines: List[str] = []
     for c in clientes:
-        nombre = c["nombre"].replace("'", "''")
-        pais = c["pais"].replace("'", "''")
+        # En Cypher, las comillas simples se escapan con backslash: \'
+        nombre = c["nombre"].replace("\\", "\\\\").replace("'", "\\'")
+        pais = c["pais"].replace("\\", "\\\\").replace("'", "\\'")
         lines.append(
             "CREATE (:Cliente {id: '%s', nombre: '%s', genero: '%s', pais: '%s'});"
             % (c["id"], nombre, c["genero"], pais)
@@ -995,14 +996,14 @@ def write_neo4j_cypher(clientes, productos, orders, rels, path: Path) -> None:
     lines.append("")
     categorias = sorted(set(p["categoria"] for p in productos))
     for i, cat in enumerate(categorias, start=1):
-        nombre = cat.replace("'", "''")
+        nombre = cat.replace("\\", "\\\\").replace("'", "\\'")
         lines.append(
             "CREATE (:Categoria {id: 'CAT-%03d', nombre: '%s'});" % (i, nombre)
         )
     lines.append("")
     for p in productos:
-        nombre = p["nombre"].replace("'", "''")
-        categoria = p["categoria"].replace("'", "''")
+        nombre = p["nombre"].replace("\\", "\\\\").replace("'", "\\'")
+        categoria = p["categoria"].replace("\\", "\\\\").replace("'", "\\'")
         lines.append(
             "MATCH (c:Categoria {nombre: '%s'}) "
             "CREATE (p:Producto {id: '%s', nombre: '%s', categoria: '%s', sku: '%s', codigo_alt: '%s', codigo_mongo: '%s'})-[:PERTENECE_A]->(c);"
@@ -1034,7 +1035,7 @@ def write_neo4j_cypher(clientes, productos, orders, rels, path: Path) -> None:
     for r in rels:
         lines.append(
             "MATCH (o:Orden {id: '%s'}), (p:Producto {sku: '%s'}) "
-            "CREATE (o)-[:CONTIENTE {cantidad: %d, precio_unit: %s}]->(p);"
+            "CREATE (o)-[:CONTIENE {cantidad: %d, precio_unit: %s}]->(p);"
             % (
                 r["orden_id"],
                 r["producto_sku"],
