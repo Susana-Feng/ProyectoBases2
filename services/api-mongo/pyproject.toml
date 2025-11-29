@@ -1,0 +1,33 @@
+[project]
+name = "api-mongo"
+version = "0.1.0"
+description = "FastAPI service that reads MongoDB data and bridges association rules stored in MSSQL DW"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.30,<1.0",
+  "pymongo>=4.9,<5.0",
+  "python-dotenv>=1.0,<2.0",
+  "pydantic>=2.9,<3.0",
+  "pyodbc>=5.1,<6.0"
+]
+
+[tool.uv]
+package = true
+
+[project.scripts]
+dev = "main:run_dev"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+  "config*",
+  "controllers*",
+  "repositories*",
+  "routers*",
+  "schemas*"
+]

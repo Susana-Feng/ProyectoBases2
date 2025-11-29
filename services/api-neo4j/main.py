@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config.database import get_neo4j_driver
@@ -7,6 +8,8 @@ from routes.products import router as products_router
 
 app = FastAPI(title="Neo4j Web API",
               root_path="/api/neo4j" )
+
+DEFAULT_PORT = 3003
 
 # CORS 
 app.add_middleware(
@@ -42,3 +45,19 @@ async def shutdown_event():
 @app.get("/", tags=["Root"])
 async def root():
     return {"message": "Ready Neo4j"}
+
+
+def run_dev():
+    import uvicorn
+
+    port = int(os.getenv("PORT", str(DEFAULT_PORT)))
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+    )
+
+
+if __name__ == "__main__":
+    run_dev()

@@ -13,7 +13,14 @@ import type {
   ProductoWithDetalles,
 } from "@/types/api";
 
-const API_BASE = "http://localhost:3001/api/v1";
+const DEFAULT_API_BASE = "http://localhost:3001/api/v1";
+
+const apiBaseFromEnv =
+  typeof globalThis !== "undefined" && (globalThis as any)?.Bun?.env?.VITE_API_URL
+    ? (globalThis as any).Bun.env.VITE_API_URL
+    : undefined;
+
+const API_BASE = apiBaseFromEnv ?? import.meta.env.VITE_API_URL ?? DEFAULT_API_BASE;
 
 // Helper function to build query parameters
 function buildQueryParams(params: Record<string, any>): string {

@@ -22,6 +22,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
+import { API_BASE_URL } from "@/lib/env";
 
 
 // Tipos basados en Orders.tsx
@@ -64,9 +65,8 @@ interface Orden {
 }
 
 // URLs de Supabase
-const apiBaseUrl = "http://localhost:8002/api/supabase/";
-const clientesUrl = `${apiBaseUrl}clients/`;
-const productosUrl = `${apiBaseUrl}products/`;
+const clientesUrl = `${API_BASE_URL}/clients/`;
+const productosUrl = `${API_BASE_URL}/products/`;
 
 
 interface CreateOrderDialogProps {

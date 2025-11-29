@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config.database import get_mongo_client, get_mssql_connection
@@ -8,6 +9,8 @@ from routers.products import router as products_router
 
 app = FastAPI(title="MongoDB Web API",
               root_path="/api/mongo")
+
+DEFAULT_PORT = 3002
 
 # CORS 
 app.add_middleware(
@@ -50,3 +53,19 @@ app.include_router(products_router)
 @app.get("/")
 async def root():
     return {"message": "Ready MongoDB"}
+
+
+def run_dev():
+    import uvicorn
+
+    port = int(os.getenv("PORT", str(DEFAULT_PORT)))
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        reload=True,
+    )
+
+
+if __name__ == "__main__":
+    run_dev()

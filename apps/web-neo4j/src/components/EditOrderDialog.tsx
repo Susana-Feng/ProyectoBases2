@@ -23,6 +23,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import type { Orden } from "@/pages/Orders";
+import { API_BASE_URL } from "@/lib/env";
 
 /* ----------------------------- Tipos ----------------------------- */
 interface Producto {
@@ -39,9 +40,8 @@ interface Cliente {
 }
 
 // URLs
-const apiBaseUrl = "http://localhost:8001/api/neo4j";
-const clientesUrl = `${apiBaseUrl}/clients`;
-const productosUrl = `${apiBaseUrl}/products`;
+const clientesUrl = `${API_BASE_URL}/clients`;
+const productosUrl = `${API_BASE_URL}/products`;
 
 /* ----------------------------- Props ----------------------------- */
 interface EditOrderDialogProps {
