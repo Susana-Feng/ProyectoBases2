@@ -9,9 +9,9 @@ run_sql() {
   local db="${2:-}"
   echo ">> Ejecutando $(basename "$f")"
   if [ -z "$db" ]; then
-    mysql -h "$HOST" -u root -p"$PASS" < "$f"
+    mysql --default-character-set=utf8mb4 -h "$HOST" -u root -p"$PASS" < "$f"
   else
-    mysql -h "$HOST" -u root -p"$PASS" "$db" < "$f"
+    mysql --default-character-set=utf8mb4 -h "$HOST" -u root -p"$PASS" "$db" < "$f"
   fi
 }
 
