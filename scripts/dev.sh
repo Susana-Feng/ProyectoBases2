@@ -242,6 +242,66 @@ start_database() {
 	fi
 }
 
+wait_for_init_container() {
+	local stack=$1
+	local container_name=""
+	
+	case "$stack" in
+		mssql) container_name="mssql_sales_init" ;;
+		mysql) container_name="mysql_sales_init" ;;
+		mongo) container_name="mongo_sales_init" ;;
+		neo4j) container_name="neo4j_sales_init" ;;
+		*) return ;;
+	esac
+	
+	# Verificar si el contenedor existe
+	if ! docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+		log_info "Contenedor de init $container_name no encontrado, continuando..."
+		return
+	fi
+	
+	log_info "Esperando a que termine la inicialización de $stack..."
+	local max_wait=300  # 5 minutos máximo
+	local waited=0
+	local interval=5
+	
+	while [[ $waited -lt $max_wait ]]; do
+		local status
+		status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || echo "not_found")
+		
+		case "$status" in
+			"exited")
+				local exit_code
+				exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$container_name" 2>/dev/null || echo "1")
+				if [[ "$exit_code" == "0" ]]; then
+					log_info "Inicialización de $stack completada exitosamente"
+					return 0
+				else
+					log_error "Inicialización de $stack falló (exit code: $exit_code)"
+					log_info "Revisa los logs con: docker logs $container_name"
+					return 1
+				fi
+				;;
+			"running")
+				sleep $interval
+				waited=$((waited + interval))
+				log_info "Inicialización de $stack en progreso... (${waited}s)"
+				;;
+			"not_found")
+				log_info "Contenedor de init no encontrado, continuando..."
+				return 0
+				;;
+			*)
+				sleep $interval
+				waited=$((waited + interval))
+				;;
+		esac
+	done
+	
+	log_error "Timeout esperando inicialización de $stack (${max_wait}s)"
+	return 1
+}
+
 stop_database() {
 	local stack=$1
 	local compose_file=${DB_COMPOSE_FILES[$stack]:-}
@@ -415,6 +475,7 @@ handle_init() {
 	local stack=$1
 	stop_stack_processes "$stack"
 	start_database "$stack" true
+	wait_for_init_container "$stack"
 	run_prisma_tasks "$stack"
 	start_backend "$stack"
 	start_frontend "$stack"
