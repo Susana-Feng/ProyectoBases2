@@ -94,10 +94,10 @@ log_error() {
 
 show_help() {
 	cat <<'EOF'
-Uso: ./scripts/dev.sh [--up|--down|--init] [stack]
+Uso: ./scripts/dev.sh [--up|--down|--init] [stack1,stack2,...]
 
 Stacks disponibles:
-  mssql, mysql, mongo, all
+  mssql, mysql, mongo, neo4j, supabase, all
 
 Acciones:
   --up    Levanta base de datos, backend y frontend en ese orden
@@ -108,6 +108,8 @@ Ejemplos:
   ./scripts/dev.sh --up mssql
   ./scripts/dev.sh --down mysql
   ./scripts/dev.sh --init all
+  ./scripts/dev.sh --init mssql,mysql
+  ./scripts/dev.sh --down mssql,mysql,mongo
 EOF
 }
 
@@ -379,6 +381,8 @@ run_prisma_tasks() {
 		log_warn "No hay package.json en $path para ejecutar Prisma"
 		return
 	fi
+	# Instalar dependencias antes de ejecutar Prisma
+	install_bun_dependencies backend "$stack" "$path"
 	log_info "Ejecutando Prisma generate para $stack"
 	(cd "$path" && bun run db:generate)
 	if grep -q '"db:push"' "$path/package.json"; then
@@ -442,18 +446,28 @@ parse_args() {
 				include_all=true
 				shift
 				;;
-			mssql|mysql|mongo|neo4j|supabase)
-				TARGETS+=("$1")
-				shift
-				;;
 			--help|-h)
 				show_help
 				exit 0
 				;;
 			*)
-				log_error "Argumento no reconocido: $1"
-				show_help
-				exit 1
+				# Manejar stacks separados por coma (ej: mssql,mysql,mongo)
+				IFS=',' read -ra STACK_LIST <<< "$1"
+				local valid_stack=false
+				for stack_item in "${STACK_LIST[@]}"; do
+					case "$stack_item" in
+						mssql|mysql|mongo|neo4j|supabase)
+							TARGETS+=("$stack_item")
+							valid_stack=true
+							;;
+						*)
+							log_error "Argumento no reconocido: $stack_item"
+							show_help
+							exit 1
+							;;
+					esac
+				done
+				shift
 				;;
 		esac
 	done
