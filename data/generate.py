@@ -509,21 +509,27 @@ def generate_orders_mysql(num_orders: int, clientes: List[Dict[str, Any]], produ
     details: List[Dict[str, Any]] = []
     dates = _sample_order_dates(num_orders)
     canales = ["WEB", "TIENDA", "APP", "PARTNER"]
+    
+    # Build codigo_alt to index mapping (1-based for MySQL AUTO_INCREMENT)
+    codigo_to_idx = {p["codigo_alt"]: idx for idx, p in enumerate(productos, start=1)}
+    
     for i, fecha in enumerate(dates, start=1):
-        cliente = random.choice(clientes)
+        # Select a random client (1-based index since MySQL AUTO_INCREMENT starts at 1)
+        cliente_idx = random.randint(1, len(clientes))
         moneda = random.choice(["USD", "CRC"])
         num_items = random.randint(1, 5)
         total_decimal = 0.0
         order_details: List[Dict[str, Any]] = []
         for _ in range(num_items):
             prod = random.choice(productos)
+            prod_idx = codigo_to_idx.get(prod["codigo_alt"], 1)
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
             total_decimal += cantidad * precio
             precio_str = f"{precio:,.2f}" if random.random() < 0.3 else f"{precio:.2f}"
             order_details.append({
                 "orden_id": i,
-                "producto_id": None,
+                "producto_id": prod_idx,
                 "cantidad": cantidad,
                 "precio_unit": precio_str,
                 "codigo_alt": prod["codigo_alt"],
@@ -533,7 +539,7 @@ def generate_orders_mysql(num_orders: int, clientes: List[Dict[str, Any]], produ
         total_str = f"{total_decimal:,.2f}" if random.random() < 0.3 else f"{total_decimal:.2f}"
         orders.append({
             "id": i,
-            "cliente_id": None,
+            "cliente_id": cliente_idx,
             "fecha": fecha.strftime("%Y-%m-%d %H:%M:%S"),
             "canal": random.choice(canales),
             "moneda": moneda,
@@ -548,20 +554,26 @@ def generate_orders_mssql(num_orders: int, clientes: List[Dict[str, Any]], produ
     details = []
     dates = _sample_order_dates(num_orders)
     canales = ["WEB", "TIENDA", "APP"]
+    
+    # Build SKU to index mapping (1-based for SQL Server IDENTITY)
+    sku_to_idx = {p["sku"]: idx for idx, p in enumerate(productos, start=1)}
+    
     for i, fecha in enumerate(dates, start=1):
-        cliente = random.choice(clientes)
+        # Select a random client (1-based index since SQL Server IDENTITY starts at 1)
+        cliente_idx = random.randint(1, len(clientes))
         num_items = random.randint(1, 5)
         total = 0.0
         line_items = []
         for _ in range(num_items):
             prod = random.choice(productos)
+            prod_idx = sku_to_idx.get(prod["sku"], 1)
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
             descuento = round(random.uniform(0, 15), 2) if random.random() < 0.3 else None
             total += cantidad * precio * (1 - (descuento or 0) / 100)
             line_items.append({
                 "OrdenId": i,
-                "ProductoId": None,
+                "ProductoId": prod_idx,
                 "Cantidad": cantidad,
                 "PrecioUnit": precio,
                 "DescuentoPct": descuento,
@@ -569,7 +581,7 @@ def generate_orders_mssql(num_orders: int, clientes: List[Dict[str, Any]], produ
             })
         orders.append({
             "OrdenId": i,
-            "ClienteId": None,
+            "ClienteId": cliente_idx,
             "Fecha": fecha.strftime("%Y-%m-%d %H:%M:%S"),
             "Canal": random.choice(canales),
             "Moneda": "USD",
@@ -599,14 +611,14 @@ def write_mysql_sql(clientes, productos, orders, details, path: Path) -> None:
     for o in orders:
         lines.append(
             "INSERT INTO Orden (cliente_id, fecha, canal, moneda, total) "
-            f"VALUES (FLOOR(1 + RAND() * 3000), '{o['fecha']}', '{o['canal']}', '{o['moneda']}', '{o['total']}');"
+            f"VALUES ({o['cliente_id']}, '{o['fecha']}', '{o['canal']}', '{o['moneda']}', '{o['total']}');"
         )
     lines.append("")
     for d in details:
         precio = d["precio_unit"].replace("'", "''")
         lines.append(
             "INSERT INTO OrdenDetalle (orden_id, producto_id, cantidad, precio_unit) "
-            f"VALUES ({d['orden_id']}, FLOOR(1 + RAND() * 500), {d['cantidad']}, '{precio}');"
+            f"VALUES ({d['orden_id']}, {d['producto_id']}, {d['cantidad']}, '{precio}');"
         )
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -633,14 +645,14 @@ def write_mssql_sql(clientes, productos, orders, details, path: Path) -> None:
     for o in orders:
         lines.append(
             "INSERT INTO dbo.Orden (ClienteId, Fecha, Canal, Moneda, Total) "
-            f"VALUES (1, '{o['Fecha']}', N'{o['Canal']}', '{o['Moneda']}', {o['Total']});"
+            f"VALUES ({o['ClienteId']}, '{o['Fecha']}', N'{o['Canal']}', '{o['Moneda']}', {o['Total']});"
         )
     lines.append("GO\n")
     for d in details:
         descuento = "NULL" if d["DescuentoPct"] is None else f"{d['DescuentoPct']}"
         lines.append(
             "INSERT INTO dbo.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnit, DescuentoPct) "
-            f"VALUES ({d['OrdenId']}, 1, {d['Cantidad']}, {d['PrecioUnit']}, {descuento});"
+            f"VALUES ({d['OrdenId']}, {d['ProductoId']}, {d['Cantidad']}, {d['PrecioUnit']}, {descuento});"
         )
     lines.append("GO")
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -651,12 +663,18 @@ def generate_orders_supabase(num_orders: int, clientes: List[Dict[str, Any]], pr
     details: List[Dict[str, Any]] = []
     dates = _sample_order_dates(num_orders)
     canales = ["WEB", "APP", "PARTNER"]
+    
+    # Assign indices to clientes and productos for referencing
+    for idx, c in enumerate(clientes, start=1):
+        c['_idx'] = idx
+    for idx, p in enumerate(productos, start=1):
+        p['_idx'] = idx
+    
     for i, fecha in enumerate(dates, start=1):
         cliente = random.choice(clientes)
         moneda = random.choice(["USD", "CRC"])
         num_items = random.randint(1, 5)
         total = 0.0
-        order_id = f"ORD-{i:06d}"
         line_items = []
         for _ in range(num_items):
             prod = random.choice(productos)
@@ -665,8 +683,8 @@ def generate_orders_supabase(num_orders: int, clientes: List[Dict[str, Any]], pr
             total += cantidad * precio
             line_items.append(
                 {
-                    "orden_id": order_id,
-                    "producto_id": None,
+                    "orden_idx": i,
+                    "producto_idx": prod['_idx'],
                     "cantidad": cantidad,
                     "precio_unit": precio,
                     "sku": prod["sku"],
@@ -675,8 +693,8 @@ def generate_orders_supabase(num_orders: int, clientes: List[Dict[str, Any]], pr
             )
         orders.append(
             {
-                "orden_id": order_id,
-                "cliente_id": None,
+                "orden_idx": i,
+                "cliente_idx": cliente['_idx'],
                 "fecha": fecha.isoformat(),
                 "canal": random.choice(canales),
                 "moneda": moneda,
@@ -689,6 +707,8 @@ def generate_orders_supabase(num_orders: int, clientes: List[Dict[str, Any]], pr
 
 def write_supabase_sql(clientes, productos, orders, details, path: Path) -> None:
     lines: List[str] = []
+    
+    # Insert clientes
     for c in clientes:
         nombre = c["nombre"].replace("'", "''")
         email = (c["email"] or "").replace("'", "''") if c.get("email") is not None else ""
@@ -698,6 +718,8 @@ def write_supabase_sql(clientes, productos, orders, details, path: Path) -> None
             f"VALUES ('{nombre}', '{email or ''}', '{c['genero']}', '{pais}', '{c['fecha_registro']}');"
         )
     lines.append("")
+    
+    # Insert productos
     for p in productos:
         nombre = p["nombre"].replace("'", "''")
         categoria = p["categoria"].replace("'", "''")
@@ -708,44 +730,77 @@ def write_supabase_sql(clientes, productos, orders, details, path: Path) -> None
             f"VALUES ({sku_val}, '{nombre}', '{categoria}');"
         )
     lines.append("")
+    
+    # Create temporary mapping tables
+    lines.append("-- Create temporary tables for mapping")
+    lines.append("CREATE TEMP TABLE _cliente_map AS SELECT cliente_id, ROW_NUMBER() OVER (ORDER BY cliente_id) AS idx FROM cliente;")
+    lines.append("CREATE TEMP TABLE _producto_map AS SELECT producto_id, ROW_NUMBER() OVER (ORDER BY producto_id) AS idx FROM producto;")
+    lines.append("")
+    
+    # Insert orders with proper cliente_id lookup
     for o in orders:
         lines.append(
             "INSERT INTO orden (cliente_id, fecha, canal, moneda, total) "
-            f"VALUES ((SELECT cliente_id FROM cliente ORDER BY random() LIMIT 1), "
-            f"'{o['fecha']}', '{o['canal']}', '{o['moneda']}', {o['total']});"
+            f"SELECT cliente_id, '{o['fecha']}', '{o['canal']}', '{o['moneda']}', {o['total']} "
+            f"FROM _cliente_map WHERE idx = {o['cliente_idx']};"
         )
     lines.append("")
+    
+    # Create orden mapping table
+    lines.append("CREATE TEMP TABLE _orden_map AS SELECT orden_id, ROW_NUMBER() OVER (ORDER BY orden_id) AS idx FROM orden;")
+    lines.append("")
+    
+    # Insert order details with proper orden_id and producto_id lookups
     for d in details:
         lines.append(
             "INSERT INTO orden_detalle (orden_id, producto_id, cantidad, precio_unit) "
-            "VALUES ((SELECT orden_id FROM orden ORDER BY random() LIMIT 1), "
-            "(SELECT producto_id FROM producto ORDER BY random() LIMIT 1), "
-            f"{d['cantidad']}, {d['precio_unit']});"
+            f"SELECT o.orden_id, p.producto_id, {d['cantidad']}, {d['precio_unit']} "
+            f"FROM _orden_map o, _producto_map p WHERE o.idx = {d['orden_idx']} AND p.idx = {d['producto_idx']};"
         )
+    
+    lines.append("")
+    lines.append("-- Clean up temporary tables")
+    lines.append("DROP TABLE IF EXISTS _cliente_map;")
+    lines.append("DROP TABLE IF EXISTS _producto_map;")
+    lines.append("DROP TABLE IF EXISTS _orden_map;")
+    
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def generate_orders_mongo(num_orders: int) -> List[Dict[str, Any]]:
+def generate_orders_mongo(num_orders: int, clientes: List[Dict[str, Any]], productos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    Generates orders for MongoDB that properly reference clients and products.
+    Returns: (clientes_with_ids, productos_with_ids, orders_with_refs)
+    """
     orders: List[Dict[str, Any]] = []
     dates = _sample_order_dates(num_orders)
-    for fecha in dates:
+    
+    # Assign indices to clientes and productos for referencing in the JS output
+    for idx, c in enumerate(clientes):
+        c['_idx'] = idx
+    for idx, p in enumerate(productos):
+        p['_idx'] = idx
+    
+    for i, fecha in enumerate(dates):
+        cliente = random.choice(clientes)
         num_items = random.randint(1, 5)
         items = []
         total = 0
         for _ in range(num_items):
+            prod = random.choice(productos)
             cantidad = random.randint(1, 5)
             precio_unit = random.randint(1000, 60000)
             total += cantidad * precio_unit
             items.append(
                 {
-                    "producto_id": "ObjectId()",
+                    "producto_idx": prod['_idx'],
                     "cantidad": cantidad,
                     "precio_unit": precio_unit,
                 }
             )
         orders.append(
             {
-                "cliente_id": "ObjectId()",
+                "cliente_idx": cliente['_idx'],
                 "fecha": fecha,
                 "canal": random.choice(["WEB", "TIENDA"]),
                 "moneda": "CRC",
@@ -753,16 +808,18 @@ def generate_orders_mongo(num_orders: int) -> List[Dict[str, Any]]:
                 "items": items,
             }
         )
-    return orders
+    return clientes, productos, orders
 
 
 def write_mongo_js(clientes, productos, orders, path: Path) -> None:
     def js_str(value: str) -> str:
-        return value.replace("'", "\\'")
+        return value.replace("'", "\\'").replace("\\", "\\\\")
 
     lines: List[str] = ["use('tiendaDB');", ""]
-    lines.append("// Insertar clientes")
-    lines.append("db.clientes.insertMany([")
+    
+    # Insert clientes and capture their IDs
+    lines.append("// Insertar clientes y obtener IDs")
+    lines.append("const clientesDocs = [")
     cliente_docs = []
     for c in clientes:
         canales = ", ".join(f"'{ch}'" for ch in c["preferencias"]["canal"])
@@ -780,10 +837,14 @@ def write_mongo_js(clientes, productos, orders, path: Path) -> None:
         )
         cliente_docs.append(doc)
     lines.append(",\n".join(cliente_docs))
-    lines.append("]);\n")
+    lines.append("];")
+    lines.append("const clientesResult = db.clientes.insertMany(clientesDocs);")
+    lines.append("const clienteIds = Object.values(clientesResult.insertedIds);")
+    lines.append("")
 
-    lines.append("// Insertar productos")
-    lines.append("db.productos.insertMany([")
+    # Insert productos and capture their IDs
+    lines.append("// Insertar productos y obtener IDs")
+    lines.append("const productosDocs = [")
     prod_docs = []
     for p in productos:
         eq = p["equivalencias"]
@@ -806,22 +867,34 @@ def write_mongo_js(clientes, productos, orders, path: Path) -> None:
         )
         prod_docs.append(doc)
     lines.append(",\n".join(prod_docs))
-    lines.append("]);\n")
+    lines.append("];")
+    lines.append("const productosResult = db.productos.insertMany(productosDocs);")
+    lines.append("const productoIds = Object.values(productosResult.insertedIds);")
+    lines.append("")
 
-    lines.append("// Insertar ordenes")
-    lines.append("db.ordenes.insertMany([")
+    # Insert ordenes with proper references
+    lines.append("// Insertar ordenes con referencias correctas")
+    lines.append("const ordenesDocs = [")
     order_docs = []
     for o in orders:
         items_js = []
         for it in o["items"]:
             items_js.append(
-                "      { producto_id: ObjectId(), cantidad: %d, precio_unit: %d }"
-                % (it["cantidad"], it["precio_unit"])
+                "    { producto_id: productoIds[%d], cantidad: %d, precio_unit: %d }"
+                % (it["producto_idx"], it["cantidad"], it["precio_unit"])
             )
         items_block = ",\n".join(items_js)
         doc = (
-            "  {cliente_id: ObjectId(), fecha: new Date('%s'), canal: '%s', moneda: 'CRC', total: %d, items: [\n%s\n  ]}"
+            "  {\n"
+            "    cliente_id: clienteIds[%d],\n"
+            "    fecha: new Date('%s'),\n"
+            "    canal: '%s',\n"
+            "    moneda: 'CRC',\n"
+            "    total: %d,\n"
+            "    items: [\n%s\n    ]\n"
+            "  }"
             % (
+                o["cliente_idx"],
                 o["fecha"].isoformat(),
                 o["canal"],
                 o["total"],
@@ -830,7 +903,14 @@ def write_mongo_js(clientes, productos, orders, path: Path) -> None:
         )
         order_docs.append(doc)
     lines.append(",\n".join(order_docs))
-    lines.append("]);\n")
+    lines.append("];")
+    lines.append("db.ordenes.insertMany(ordenesDocs);")
+    lines.append("")
+    lines.append("print('Datos insertados correctamente');")
+    lines.append(f"print('Clientes: ' + clienteIds.length);")
+    lines.append(f"print('Productos: ' + productoIds.length);")
+    lines.append(f"print('Ordenes: ' + ordenesDocs.length);")
+    
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -961,7 +1041,7 @@ def main() -> None:
     ordenes_mysql, detalles_mysql = generate_orders_mysql(num_ordenes_total // 5, clientes_mysql, productos_mysql)
     ordenes_mssql, detalles_mssql = generate_orders_mssql(num_ordenes_total // 5, clientes_mssql, productos_mssql)
     ordenes_supabase, detalles_supabase = generate_orders_supabase(num_ordenes_total // 5, clientes_supabase, productos_supabase)
-    ordenes_mongo = generate_orders_mongo(num_ordenes_total // 5)
+    clientes_mongo_out, productos_mongo_out, ordenes_mongo = generate_orders_mongo(num_ordenes_total // 5, clientes_mongo, productos_mongo)
     ordenes_neo4j, rels_neo4j = generate_orders_neo4j(num_ordenes_total // 5, clientes_neo4j, productos_neo4j)
 
     write_mysql_sql(
@@ -986,8 +1066,8 @@ def main() -> None:
         OUT_DIR / "supabase_data.sql",
     )
     write_mongo_js(
-        clientes_mongo,
-        productos_mongo,
+        clientes_mongo_out,
+        productos_mongo_out,
         ordenes_mongo,
         OUT_DIR / "mongo_data.js",
     )
