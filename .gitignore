@@ -150,6 +150,7 @@ data/raw/**/*
 !data/samples/.gitkeep
 !data/staging/.gitkeep
 !data/raw/.gitkeep
+!data/out/
 
 venv/
 .venv/
