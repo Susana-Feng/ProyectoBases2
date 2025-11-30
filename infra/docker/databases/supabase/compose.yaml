@@ -11,7 +11,7 @@ services:
       SUPABASE_DB_PORT: "${SUPABASE_DB_PORT:-5432}"
       SUPABASE_DB_USER: "${SUPABASE_DB_USER:-postgres}"
       SUPABASE_DB_NAME: "${SUPABASE_DB_NAME:-postgres}"
-    working_dir: /workspace/scripts/Supabase
+    working_dir: /workspace
     volumes:
       - ../../../../:/workspace:ro
       - ./init:/scripts:ro

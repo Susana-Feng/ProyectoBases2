@@ -14,20 +14,35 @@ fi
 
 export PGPASSWORD="$PASS"
 export PGSSLMODE="${PGSSLMODE:-require}"
-INIT_FILE="/workspace/scripts/Supabase/init.sql"
 
-if [[ ! -f "$INIT_FILE" ]]; then
-  echo "[err] No se encontró $INIT_FILE" >&2
-  exit 1
-fi
+# Scripts are mounted in /scripts, data files in /workspace
+SCRIPT_DIR="/scripts"
+DATA_FILE="/workspace/data/out/supabase_data.sql"
 
-echo "[info] Ejecutando init.sql contra Supabase ($HOST:$PORT/$DB)"
+echo "[info] Ejecutando scripts contra Supabase ($HOST:$PORT/$DB)"
+
+# Execute schema
+echo "[info] Aplicando schema..."
 psql \
   --host "$HOST" \
   --port "$PORT" \
   --username "$USER" \
   --dbname "$DB" \
   --set ON_ERROR_STOP=1 \
-  --file "$INIT_FILE"
+  --file "$SCRIPT_DIR/00_schema.sql"
+
+# Execute data load
+if [[ -f "$DATA_FILE" ]]; then
+  echo "[info] Cargando datos desde $DATA_FILE..."
+  psql \
+    --host "$HOST" \
+    --port "$PORT" \
+    --username "$USER" \
+    --dbname "$DB" \
+    --set ON_ERROR_STOP=1 \
+    --file "$DATA_FILE"
+else
+  echo "[warn] No se encontró $DATA_FILE, omitiendo carga de datos"
+fi
 
 echo "[info] Supabase init completado"

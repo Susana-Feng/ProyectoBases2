@@ -2,7 +2,6 @@
 -- Script unificado de Supabase
 -- Crea tablas, funciones y vistas necesarias
 -- ===========================================
--- Nota: para aplicar schema + datos de ejemplo utiliza scripts/Supabase/init.sql
 
 -- Extensión para UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -237,3 +236,4 @@ FROM public.orden o
 INNER JOIN public.orden_detalle d ON o.orden_id = d.orden_id
 INNER JOIN public.producto p ON p.producto_id = d.producto_id
 INNER JOIN public.cliente c ON c.cliente_id = o.cliente_id;
+
