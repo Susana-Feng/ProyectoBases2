@@ -7,6 +7,9 @@ Heterogeneidades de MS SQL Server:
 - Moneda: Siempre 'USD' (no requiere conversión)
 - SKU: SKU oficial que será la clave canónica
 - Fechas: DATETIME2 que se convierte a DATE
+
+NOTA: Se utilizan sentencias MERGE para garantizar idempotencia del ETL.
+      Si se ejecuta varias veces, no duplicará datos.
 """
 
 from datetime import datetime
@@ -20,81 +23,96 @@ engine = get_dw_engine()
 
 # -----------------------------------------------------------------------
 #            Queries de SQL para transformación de datos de MS SQL Server
+#            Usando MERGE para evitar duplicados (idempotente)
 # -----------------------------------------------------------------------
 
 query_insert_map_producto = """
-    INSERT INTO stg.map_producto(
-        source_system,
-        source_code,
-        sku_oficial,
-        nombre_norm,
-        categoria_norm,
-        es_servicio )
-    VALUES (
-        :source_system,
-        :source_code,
-        :sku_oficial,
-        :nombre_norm,
-        :categoria_norm,
-        :es_servicio );
+    MERGE INTO stg.map_producto AS target
+    USING (SELECT
+        :source_system AS source_system,
+        :source_code AS source_code,
+        :sku_oficial AS sku_oficial,
+        :nombre_norm AS nombre_norm,
+        :categoria_norm AS categoria_norm,
+        :es_servicio AS es_servicio
+    ) AS source
+    ON target.source_system = source.source_system
+        AND target.source_code = source.source_code
+    WHEN MATCHED THEN
+        UPDATE SET
+            sku_oficial = source.sku_oficial,
+            nombre_norm = source.nombre_norm,
+            categoria_norm = source.categoria_norm,
+            es_servicio = source.es_servicio
+    WHEN NOT MATCHED THEN
+        INSERT (source_system, source_code, sku_oficial, nombre_norm, categoria_norm, es_servicio)
+        VALUES (source.source_system, source.source_code, source.sku_oficial,
+                source.nombre_norm, source.categoria_norm, source.es_servicio);
 """
 
 query_insert_clientes_stg = """
-    INSERT INTO stg.clientes(
-        source_system,
-        source_code,
-        cliente_email,
-        cliente_nombre,
-        genero_raw,
-        pais_raw,
-        fecha_creado_raw,
-        fecha_creado_dt,
-        genero_norm )
-    VALUES (
-        :source_system,
-        :source_code,
-        :cliente_email,
-        :cliente_nombre,
-        :genero_raw,
-        :pais_raw,
-        :fecha_creado_raw,
-        :fecha_creado_dt,
-        :genero_norm );
+    MERGE INTO stg.clientes AS target
+    USING (SELECT
+        :source_system AS source_system,
+        :source_code AS source_code,
+        :cliente_email AS cliente_email,
+        :cliente_nombre AS cliente_nombre,
+        :genero_raw AS genero_raw,
+        :pais_raw AS pais_raw,
+        :fecha_creado_raw AS fecha_creado_raw,
+        :fecha_creado_dt AS fecha_creado_dt,
+        :genero_norm AS genero_norm
+    ) AS source
+    ON target.source_system = source.source_system
+        AND target.source_code = source.source_code
+    WHEN MATCHED THEN
+        UPDATE SET
+            cliente_email = COALESCE(source.cliente_email, target.cliente_email),
+            cliente_nombre = COALESCE(source.cliente_nombre, target.cliente_nombre),
+            genero_raw = COALESCE(source.genero_raw, target.genero_raw),
+            pais_raw = COALESCE(source.pais_raw, target.pais_raw),
+            fecha_creado_raw = COALESCE(source.fecha_creado_raw, target.fecha_creado_raw),
+            fecha_creado_dt = COALESCE(source.fecha_creado_dt, target.fecha_creado_dt),
+            genero_norm = COALESCE(source.genero_norm, target.genero_norm)
+    WHEN NOT MATCHED THEN
+        INSERT (source_system, source_code, cliente_email, cliente_nombre, genero_raw,
+                pais_raw, fecha_creado_raw, fecha_creado_dt, genero_norm)
+        VALUES (source.source_system, source.source_code, source.cliente_email,
+                source.cliente_nombre, source.genero_raw, source.pais_raw,
+                COALESCE(source.fecha_creado_raw, '1900-01-01'),
+                source.fecha_creado_dt, source.genero_norm);
 """
 
 query_insert_orden_item_stg = """
-    INSERT INTO stg.orden_items(
-        source_system,
-        source_key_orden,
-        source_key_item,
-        source_code_prod,
-        cliente_key,
-        fecha_raw,
-        canal_raw,
-        moneda,
-        cantidad_raw,
-        precio_unit_raw,
-        total_raw,
-        fecha_dt,
-        cantidad_num,
-        precio_unit_num,
-        total_num )
-    VALUES (
-        :source_system,
-        :source_key_orden,
-        :source_key_item,
-        :source_code_prod,
-        :cliente_key,
-        :fecha_raw,
-        :canal_raw,
-        :moneda,
-        :cantidad_raw,
-        :precio_unit_raw,
-        :total_raw,
-        :fecha_dt,
-        :cantidad_num,
-        :precio_unit_num,
-        :total_num )
+    MERGE INTO stg.orden_items AS target
+    USING (SELECT
+        :source_system AS source_system,
+        :source_key_orden AS source_key_orden,
+        :source_key_item AS source_key_item,
+        :source_code_prod AS source_code_prod,
+        :cliente_key AS cliente_key,
+        :fecha_raw AS fecha_raw,
+        :canal_raw AS canal_raw,
+        :moneda AS moneda,
+        :cantidad_raw AS cantidad_raw,
+        :precio_unit_raw AS precio_unit_raw,
+        :total_raw AS total_raw,
+        :fecha_dt AS fecha_dt,
+        :cantidad_num AS cantidad_num,
+        :precio_unit_num AS precio_unit_num,
+        :total_num AS total_num
+    ) AS source
+    ON target.source_system = source.source_system
+        AND target.source_key_orden = source.source_key_orden
+        AND target.source_key_item = source.source_key_item
+    WHEN NOT MATCHED THEN
+        INSERT (source_system, source_key_orden, source_key_item, source_code_prod,
+                cliente_key, fecha_raw, canal_raw, moneda, cantidad_raw, precio_unit_raw,
+                total_raw, fecha_dt, cantidad_num, precio_unit_num, total_num)
+        VALUES (source.source_system, source.source_key_orden, source.source_key_item,
+                source.source_code_prod, source.cliente_key, source.fecha_raw, source.canal_raw,
+                source.moneda, source.cantidad_raw, source.precio_unit_raw, source.total_raw,
+                source.fecha_dt, source.cantidad_num, source.precio_unit_num, source.total_num);
 """
 
 # -----------------------------------------------------------------------
@@ -179,10 +197,11 @@ def insert_orden_items_stg(orden, detalle, productos_dict):
     Args:
         orden: Row con datos de la orden
         detalle: Row con datos del detalle de orden
-        productos_dict: Diccionario {ProductoId: SKU} para mapeo rápido
+        productos_dict: Diccionario {ProductoId: SKU} para mapeo rápido (no usado en source_code_prod)
     """
-    # Obtener SKU del producto
-    sku_producto = productos_dict.get(detalle.ProductoId, f"PROD-{detalle.ProductoId}")
+    # El source_code_prod debe coincidir con source_code en map_producto
+    # Para MSSQL, ambos usan ProductoId como string
+    source_code_prod = str(detalle.ProductoId)
 
     # Convertir fecha a DATE
     if isinstance(orden.Fecha, datetime):
@@ -211,7 +230,7 @@ def insert_orden_items_stg(orden, detalle, productos_dict):
                 "source_system": "mssql",
                 "source_key_orden": str(orden.OrdenId),
                 "source_key_item": str(detalle.OrdenDetalleId),
-                "source_code_prod": sku_producto,
+                "source_code_prod": source_code_prod,
                 "cliente_key": str(orden.ClienteId),
                 "fecha_raw": str(orden.Fecha),
                 "canal_raw": canal_raw,

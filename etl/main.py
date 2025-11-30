@@ -3,10 +3,12 @@ import sys
 
 from extract.mongo import extract_mongo
 from extract.mssql import extract_mssql
+from extract.mysql import extract_mysql
 from extract.supabase import extract_supabase
 from load.general import load_datawarehouse
 from transform.mongo import transform_mongo
 from transform.mssql import transform_mssql
+from transform.mysql import transform_mysql
 from transform.supabase import transform_supabase
 from association_rules.load_rules import carga_reglas_asociacion
 
@@ -29,6 +31,30 @@ def check_interrupt():
         sys.exit(0)
 
 
+def verificar_tipos_cambio():
+    """
+    Verifica si hay tipos de cambio cargados y si no, carga el histórico.
+    """
+    from sqlalchemy import text
+    from configs.connections import get_dw_engine
+    
+    try:
+        engine = get_dw_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM stg.tipo_cambio"))
+            count = result.fetchone()[0]
+            
+            if count == 0:
+                print("\n⚠️  No hay tipos de cambio cargados.")
+                print("   Ejecuta el job SQL Server 'BCCR_TipoCambio_Diario' o corre:")
+                print("   EXEC DW_SALES.jobs.sp_BCCR_CargarTiposCambio @FechaInicio='2010-01-01', @FechaFinal=GETDATE();")
+            else:
+                print(f"\n✓ Tipos de cambio ya cargados: {count} registros")
+    except Exception as e:
+        print(f"⚠️  No se pudo verificar tipos de cambio: {e}")
+        print("   Verifica la instancia de SQL Server antes de continuar...")
+
+
 if __name__ == "__main__":
     # Configurar manejo de señales
     signal.signal(signal.SIGINT, signal_handler)
@@ -38,6 +64,11 @@ if __name__ == "__main__":
     print("=" * 60)
 
     try:
+        # ========== TIPOS DE CAMBIO ==========
+        print("\n[0] VERIFICACIÓN DE TIPOS DE CAMBIO")
+        print("-" * 60)
+        verificar_tipos_cambio()
+        check_interrupt()
 
         # ========== EXTRACCIÓN ==========
         print("\n[1] EXTRACCIÓN DE DATOS")
@@ -57,15 +88,27 @@ if __name__ == "__main__":
 
         # Extraer datos de MS SQL Server
         print("\n[MS SQL Server] Extrayendo datos...")
-        # try:
-        #     objetos_mssql = extract_mssql()
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error extrayendo de MS SQL Server: {e}")
-        #     import traceback
+        try:
+            objetos_mssql = extract_mssql()
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error extrayendo de MS SQL Server: {e}")
+            import traceback
 
-        #     traceback.print_exc()
-        #     sys.exit(1)
+            traceback.print_exc()
+            sys.exit(1)
+
+        # Extraer datos de MySQL
+        print("\n[MySQL] Extrayendo datos...")
+        try:
+            objetos_mysql = extract_mysql()
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error extrayendo de MySQL: {e}")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
 
         # Extraer datos de Supabase
         print("\n[Supabase] Extrayendo datos...")
@@ -97,17 +140,31 @@ if __name__ == "__main__":
 
         # Transformar datos de MS SQL Server
         print("\n[MS SQL Server] Transformando datos...")
-        # try:
-        #     transform_mssql(
-        #         objetos_mssql[0], objetos_mssql[1], objetos_mssql[2], objetos_mssql[3]
-        #     )
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error transformando datos de MS SQL Server: {e}")
-        #     import traceback
+        try:
+            transform_mssql(
+                objetos_mssql[0], objetos_mssql[1], objetos_mssql[2], objetos_mssql[3]
+            )
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error transformando datos de MS SQL Server: {e}")
+            import traceback
 
-        #     traceback.print_exc()
-        #     sys.exit(1)
+            traceback.print_exc()
+            sys.exit(1)
+
+        # Transformar datos de MySQL
+        print("\n[MySQL] Transformando datos...")
+        try:
+            transform_mysql(
+                objetos_mysql[0], objetos_mysql[1], objetos_mysql[2], objetos_mysql[3]
+            )
+            check_interrupt()
+        except Exception as e:
+            print(f"❌ Error transformando datos de MySQL: {e}")
+            import traceback
+
+            traceback.print_exc()
+            sys.exit(1)
 
         # Transformar datos de Supabase
         print("\n[Supabase] Transformando datos...")
@@ -143,8 +200,8 @@ if __name__ == "__main__":
 
 
 
-        # Nota: Los tipos de cambio se aplican mediante los jobs de BCCR
-        # Ejecutar jobs/bccr_tc_historico.py para cargar TCs históricos
+        # Nota: Los tipos de cambio se aplican mediante los jobs de SQL Server
+        # Usa DW_SALES.jobs.sp_BCCR_CargarTiposCambio para reconstruir históricos
 
     except KeyboardInterrupt:
         print("\n\n⚠️  Proceso interrumpido por el usuario (Ctrl+C)")

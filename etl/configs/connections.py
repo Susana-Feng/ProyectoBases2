@@ -27,6 +27,13 @@ MSSQL_SALES_USER = os.getenv("MSSQL_SALES_USER", "your-username")
 MSSQL_SALES_PASS = os.getenv("MSSQL_SALES_PASS", "your-password")
 MSSQL_SALES_DB = os.getenv("MSSQL_SALES_DB", "DB_SALES")
 
+# Configuración MySQL DB_SALES (fuente transaccional)
+MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASS = os.getenv("MYSQL_PASS", "password")
+MYSQL_DB = os.getenv("MYSQL_DB", "DB_SALES")
+
 # Configuración BCCR WebService
 BCCR_TOKEN = os.getenv("BCCR_TOKEN", "your-bccr-token")
 BCCR_EMAIL = os.getenv("BCCR_EMAIL", "your-email@example.com")
@@ -71,6 +78,18 @@ def get_mssql_sales_engine():
         f"mssql+pyodbc://{MSSQL_SALES_USER}:{MSSQL_SALES_PASS}@"
         f"{MSSQL_SALES_HOST}:{MSSQL_SALES_PORT}/{MSSQL_SALES_DB}"
         f"?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+    )
+    return create_engine(connection_string, echo=False)
+
+
+def get_mysql_engine():
+    """
+    Crea y retorna un engine de SQLAlchemy para la BD transaccional DB_SALES (MySQL).
+    """
+    connection_string = (
+        f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASS}@"
+        f"{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+        f"?charset=utf8mb4"
     )
     return create_engine(connection_string, echo=False)
 
