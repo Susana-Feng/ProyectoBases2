@@ -503,7 +503,8 @@ def distribuir_productos_entre_catalogos(
 # ============================================================================
 
 def _sample_order_dates(n: int) -> List[datetime]:
-    start = datetime(2024, 1, 1)
+    # Start 2 years ago (within the 3-year BCCR exchange rate history)
+    start = datetime.now() - timedelta(days=2*365)
     # Use yesterday as the end date to avoid future orders that won't match DimTiempo
     end = datetime.now().replace(hour=23, minute=59, second=59) - timedelta(days=1)
     delta = (end - start).total_seconds()
