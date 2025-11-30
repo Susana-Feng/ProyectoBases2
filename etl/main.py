@@ -5,7 +5,7 @@ from extract.mongo import extract_mongo
 from extract.mssql import extract_mssql
 from extract.mysql import extract_mysql
 from extract.supabase import extract_supabase
-from extract.neo4j_ import extract_neo4j
+from extract.neo4j import extract_neo4j
 from load.general import load_datawarehouse
 from transform.mongo import transform_mongo
 from transform.mssql import transform_mssql
@@ -113,21 +113,9 @@ if __name__ == "__main__":
             sys.exit(1)
 
         # Extraer datos de Supabase
-        # print("\n[Supabase] Extrayendo datos...")
-        # try:
-        #     objetos_supabase = extract_supabase()
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error extrayendo de Supabase: {e}")
-        #     import traceback
-
-        #     traceback.print_exc()
-        #     sys.exit(1)
-
-        # Extraer datos de Neo4j
-        print("\n[Neo4j] Extrayendo datos...")
+        print("\n[Supabase] Extrayendo datos...")
         try:
-            objetos_neo4j = extract_neo4j()
+            objetos_supabase = extract_supabase()
             check_interrupt()
         except Exception as e:
             print(f"❌ Error extrayendo de Supabase: {e}")
@@ -135,6 +123,18 @@ if __name__ == "__main__":
 
             traceback.print_exc()
             sys.exit(1)
+
+        # Extraer datos de Neo4j
+        # print("\n[Neo4j] Extrayendo datos...")
+        # try:
+        #     objetos_neo4j = extract_neo4j()
+        #     check_interrupt()
+        # except Exception as e:
+        #     print(f"❌ Error extrayendo de Supabase: {e}")
+        #     import traceback
+
+        #     traceback.print_exc()
+        #     sys.exit(1)
 
         # ========== TRANSFORMACIÓN ==========
         # print("\n[2] TRANSFORMACIÓN DE DATOS")
@@ -181,29 +181,29 @@ if __name__ == "__main__":
             sys.exit(1)
 
         # # Transformar datos de Supabase
-        # print("\n[Supabase] Transformando datos...")
-        # try:
-        #     transform_supabase(objetos_supabase[2], objetos_supabase[0], objetos_supabase[1])
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error transformando datos de Supabase: {e}")
-        #     import traceback
-
-        #     traceback.print_exc()
-        #     sys.exit(1)
-
-        # Transformar datos de Supabase
-        print("\n[Neo4j] Transformando datos...")
+        print("\n[Supabase] Transformando datos...")
         try:
-            #print(objetos_neo4j["nodes"].get("Producto"))
-            transform_Neo4j(objetos_neo4j["nodes"].get("Producto"), objetos_neo4j["nodes"].get("Cliente"), objetos_neo4j["relationships"].get("REALIZO"), objetos_neo4j["relationships"].get("CONTIENE"))
+            transform_supabase(objetos_supabase[2], objetos_supabase[0], objetos_supabase[1])
             check_interrupt()
         except Exception as e:
-            print(f"❌ Error transformando datos de Neo4j: {e}")
+            print(f"❌ Error transformando datos de Supabase: {e}")
             import traceback
 
             traceback.print_exc()
             sys.exit(1)
+
+        # Transformar datos de Supabase
+        print("\n[Neo4j] Transformando datos...")
+        # try:
+        #     #print(objetos_neo4j["nodes"].get("Producto"))
+        #     transform_Neo4j(objetos_neo4j["nodes"].get("Producto"), objetos_neo4j["nodes"].get("Cliente"), objetos_neo4j["relationships"].get("REALIZO"), objetos_neo4j["relationships"].get("CONTIENE"))
+        #     check_interrupt()
+        # except Exception as e:
+        #     print(f"❌ Error transformando datos de Neo4j: {e}")
+        #     import traceback
+
+        #     traceback.print_exc()
+        #     sys.exit(1)
 
         # # ========== CARGA ==========
         print("\n[3] CARGA AL DATA WAREHOUSE")
