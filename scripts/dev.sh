@@ -204,6 +204,57 @@ run_remote_mssql_init() {
 	fi
 }
 
+configure_mssql_backend_env() {
+	local env_file
+	env_file=$(backend_env_file mssql)
+	if [[ -z "$env_file" ]]; then
+		log_warn "No se encontró archivo .env para backend mssql"
+		return
+	fi
+
+	local host port pass mode_label user db
+	user=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_USER "sa")
+	db=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_SALES_DB "DB_SALES")
+
+	if [[ "$MSSQL_MODE" == "local" ]]; then
+		host=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_LOCAL_HOST "localhost")
+		port=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_LOCAL_PORT "1433")
+		pass=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_LOCAL_PASS "YourStrong@Passw0rd1")
+		mode_label="local"
+	else
+		host=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_HOST "")
+		port=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_PORT "15433")
+		pass=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_PASS "YourStrong@Passw0rd1")
+		mode_label="remota"
+	fi
+
+	if [[ -z "$host" ]]; then
+		log_error "No hay host configurado para MSSQL ($MSSQL_MODE) en $COMPOSE_ENV_FILE"
+		exit 1
+	fi
+
+	local url
+	url="sqlserver://$host:$port;database=$db;user=$user;password=$pass;encrypt=true;trustServerCertificate=true"
+
+	if grep -q '^DATABASE_URL=' "$env_file"; then
+		sed -i "s|^DATABASE_URL=.*$|DATABASE_URL=\"$url\"|" "$env_file"
+	else
+		printf 'DATABASE_URL="%s"\n' "$url" >> "$env_file"
+	fi
+
+	log_info "DATABASE_URL del backend mssql configurada para instancia $mode_label"
+}
+
+maybe_configure_backend_env() {
+	local stack=$1
+	case "$stack" in
+		mssql)
+			configure_mssql_backend_env
+			;;
+		*) ;;
+	esac
+}
+
 backend_env_file() {
 	local stack=$1
 	local base=${BACKEND_PATHS[$stack]}
@@ -449,6 +500,8 @@ start_backend() {
 	port=$(resolve_backend_port "$stack")
 
 	[[ -d "$path" ]] || { log_error "No existe backend para $stack"; exit 1; }
+
+	maybe_configure_backend_env "$stack"
 
 	case "$runner" in
 		bun)
