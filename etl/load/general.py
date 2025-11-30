@@ -382,12 +382,17 @@ def load_dim_cliente(conn):
     clientes_stg = get_clientes_stg(conn, last_load_ts)
 
     if not clientes_stg:
-        return 0, 0
+        return 0, 0, {}
 
     loaded_count = 0
     skipped_count = 0
+    by_source = {}
 
     for cliente in clientes_stg:
+        source = cliente.sourceSystem
+        if source not in by_source:
+            by_source[source] = 0
+        
         # Double check to avoid duplicates
         if not cliente_exists(conn, cliente.sourceSystem, cliente.sourceCode):
             conn.execute(
@@ -403,10 +408,11 @@ def load_dim_cliente(conn):
                 },
             )
             loaded_count += 1
+            by_source[source] += 1
         else:
             skipped_count += 1
 
-    return loaded_count, skipped_count
+    return loaded_count, skipped_count, by_source
 
 
 def load_dim_producto(conn):
@@ -416,11 +422,17 @@ def load_dim_producto(conn):
     productos_stg = get_new_map_productos(conn)
 
     if not productos_stg:
-        return 0
+        return 0, {}
 
     loaded_count = 0
     skipped_count = 0
+    by_source = {}
+    
     for producto in productos_stg:
+        source = producto.SourceSystem
+        if source not in by_source:
+            by_source[source] = 0
+            
         # Check by (SourceSystem, SourceKey) AND by SKU to avoid duplicates
         if product_exists(conn, producto.SourceSystem, producto.SourceKey):
             skipped_count += 1
@@ -442,8 +454,9 @@ def load_dim_producto(conn):
             },
         )
         loaded_count += 1
+        by_source[source] += 1
 
-    return loaded_count
+    return loaded_count, by_source
 
 
 def load_dim_producto_initial(conn):
@@ -481,26 +494,40 @@ def load_fact_ventas(conn):
     """Carga solo ventas nuevas, evitando duplicados"""
     last_load_ts = get_last_load_timestamp(conn, "dw.FactVentas")
 
-    count_fact_ventas_query = "SELECT COUNT(*) FROM dw.FactVentas"
+    count_by_source_query = "SELECT Fuente, COUNT(*) AS cnt FROM dw.FactVentas GROUP BY Fuente"
 
     # Check if there are new sales in staging
     result = conn.execute(text(query_select_new_orders), {"last_load_ts": last_load_ts})
     new_records = result.fetchone()[0]
 
     if new_records == 0:
-        return 0, 0, None
+        return 0, 0, None, {}
 
-    # Count records before
-    count_before = conn.execute(text(count_fact_ventas_query)).fetchone()[0]
+    # Count records before by source
+    before_by_source = {}
+    for row in conn.execute(text(count_by_source_query)):
+        before_by_source[row.Fuente] = row.cnt
+    count_before = sum(before_by_source.values())
 
     # Insert (query already has NOT EXISTS to avoid duplicates)
     conn.execute(text(query_insert_factVentas), {"last_load_ts": last_load_ts})
 
-    # Count records after
-    count_after = conn.execute(text(count_fact_ventas_query)).fetchone()[0]
+    # Count records after by source
+    after_by_source = {}
+    for row in conn.execute(text(count_by_source_query)):
+        after_by_source[row.Fuente] = row.cnt
+    count_after = sum(after_by_source.values())
 
     loaded_count = count_after - count_before
     skipped_count = new_records - loaded_count
+    
+    # Calculate loaded by source
+    by_source = {}
+    for source in after_by_source:
+        before = before_by_source.get(source, 0)
+        after = after_by_source[source]
+        if after - before > 0:
+            by_source[source] = after - before
 
     # Diagnostic: check why records were skipped
     diagnostics = None
@@ -555,7 +582,7 @@ def load_fact_ventas(conn):
     diag_result = conn.execute(text(diagnostic_query), {"last_load_ts": last_load_ts})
     diagnostics = [(row.Reason, row.Count) for row in diag_result if row.Count > 0]
 
-    return loaded_count, skipped_count, diagnostics if diagnostics else None
+    return loaded_count, skipped_count, diagnostics if diagnostics else None, by_source
 
 
 def check_exchange_rate_coverage(conn):
@@ -576,6 +603,26 @@ def check_exchange_rate_coverage(conn):
 """ -----------------------------------------------------------------------
             Main function to load the DataWarehouse
     ----------------------------------------------------------------------- """
+
+
+def format_by_source(by_source):
+    """Format source counts in consistent order"""
+    order = ["mssql", "mysql", "supab", "mongo", "neo4j"]
+    # Map supabase to supab for display
+    display_map = {"supabase": "supab"}
+    parts = []
+    for src in order:
+        # Check both original and mapped names
+        count = by_source.get(src, 0)
+        if count == 0:
+            # Try the full name for supabase
+            for full, short in display_map.items():
+                if short == src:
+                    count = by_source.get(full, 0)
+                    break
+        if count > 0:
+            parts.append(f"{src}: {count}")
+    return " | ".join(parts) if parts else ""
 
 
 def load_datawarehouse():
@@ -601,9 +648,9 @@ def load_datawarehouse():
                     "             These will be EXCLUDED until BCCR job provides rates"
                 )
 
-            clientes_loaded, clientes_skipped = load_dim_cliente(conn)
-            productos_loaded = load_dim_producto(conn)
-            ventas_loaded, ventas_skipped, diagnostics = load_fact_ventas(conn)
+            clientes_loaded, clientes_skipped, clientes_by_source = load_dim_cliente(conn)
+            productos_loaded, productos_by_source = load_dim_producto(conn)
+            ventas_loaded, ventas_skipped, diagnostics, ventas_by_source = load_fact_ventas(conn)
 
             # Print summary
             print(f"    DimTiempo: {tiempo_status}")
@@ -612,13 +659,19 @@ def load_datawarehouse():
             if clientes_skipped > 0:
                 cliente_msg += f", {clientes_skipped} skipped"
             print(cliente_msg)
+            if clientes_by_source:
+                print(f"        {format_by_source(clientes_by_source)}")
 
             print(f"    DimProducto: {productos_loaded} loaded")
+            if productos_by_source:
+                print(f"        {format_by_source(productos_by_source)}")
 
             ventas_msg = f"    FactVentas: {ventas_loaded} loaded"
             if ventas_skipped > 0:
                 ventas_msg += f", {ventas_skipped} skipped"
             print(ventas_msg)
+            if ventas_by_source:
+                print(f"        {format_by_source(ventas_by_source)}")
 
             # Show diagnostics if there were skipped records
             if diagnostics:
