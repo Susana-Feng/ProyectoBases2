@@ -88,6 +88,14 @@ declare -A FRONTEND_PORT_DEFAULTS=(
 	[supabase]=5004
 )
 
+declare -A INIT_MAX_WAIT=(
+	[mssql]=300
+	[mysql]=300
+	[mongo]=300
+	[neo4j]=300
+	[supabase]=0
+)
+
 OPEN_INDEX_AFTER=false
 MSSQL_MODE_EXPLICIT=false
 
@@ -417,11 +425,15 @@ wait_for_init_container() {
 	fi
 	
 	log_info "Esperando a que termine la inicialización de $stack..."
-	local max_wait=300  # 5 minutos máximo
+	local max_wait=${INIT_MAX_WAIT[$stack]:-300}
+	local unlimited=false
+	if [[ "$max_wait" -le 0 ]]; then
+		unlimited=true
+	fi
 	local waited=0
 	local interval=5
 	
-	while [[ $waited -lt $max_wait ]]; do
+	while true; do
 		local status
 		status=$(docker inspect -f '{{.State.Status}}' "$container_name" 2>/dev/null || echo "not_found")
 		
@@ -452,10 +464,13 @@ wait_for_init_container() {
 				waited=$((waited + interval))
 				;;
 		esac
+
+			if [[ "$unlimited" != true && $waited -ge $max_wait ]]; then
+				log_error "Timeout esperando inicialización de $stack (${max_wait}s)"
+				log_info "Puedes revisar los logs con: docker logs $container_name"
+				return 1
+			fi
 	done
-	
-	log_error "Timeout esperando inicialización de $stack (${max_wait}s)"
-	return 1
 }
 
 stop_database() {
