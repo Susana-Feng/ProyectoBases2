@@ -37,15 +37,28 @@ query_insert_map_producto = """
                 source.nombre_norm, source.categoria_norm, source.es_servicio);
 """
 
+# Para obtener el ultimo sku
 query_select_map_producto_sku = """
     SELECT 
         'SKU' +
-        RIGHT('0000' + CAST(
-            MAX(CAST(SUBSTRING(sku_oficial, 4, LEN(sku_oficial)) AS INT))
-        AS VARCHAR(10)), 4) AS UltimoSKU
+        RIGHT(
+            '0000' + CAST(
+                MAX(
+                    CAST(
+                        CASE 
+                            WHEN SUBSTRING(sku_oficial, 4, 1) = '-' 
+                                THEN SUBSTRING(sku_oficial, 5, LEN(sku_oficial))  -- SKU-0001
+                            ELSE SUBSTRING(sku_oficial, 4, LEN(sku_oficial))      -- SKU0001
+                        END
+                    AS INT)
+                ) 
+            AS VARCHAR(10)
+        ), 4
+    ) AS UltimoSKU
     FROM stg.map_producto;
 """
 
+# Para obtener sku de producto que coincida por nombre y categoria 
 query_select_map_producto_sku_exist = """
     SELECT TOP 1
         sku_oficial AS SKU
@@ -127,27 +140,38 @@ query_insert_clientes_stg = """
             Funciones de preparacion de datos para staging de Supabase
     ----------------------------------------------------------------------- """
 
-
 def find_sku():
+    engine = get_dw_engine()
     result = pd.read_sql(query_select_map_producto_sku, engine)
 
     if result.empty:
-        # Si no hay registros, empezar desde SKU0001
         return "SKU0001"
 
-    # Detectar automáticamente el nombre de la columna (SKU o UltimoSKU)
     colname = result.columns[0]
-    result = result[colname].iloc[0]
+    raw_sku = result[colname].iloc[0]
 
-    # Extraer la parte numérica del SKU
+    # Si viene vacío o NULL
+    if raw_sku is None or pd.isna(raw_sku) or raw_sku.strip() == "":
+        return "SKU0001"
+
+    sku = raw_sku.strip()
+
+    # ----- Extraer parte numérica -----
+    # SKU0001  -> número empieza en 3
+    # SKU-0001 -> número empieza en 4
+    if sku.startswith("SKU-"):
+        parte_numerica = sku[4:]   # Desde después del guion
+    else:
+        parte_numerica = sku[3:]   # Desde después de "SKU"
+
     try:
-        numero = int(result.replace("SKU", ""))
-    except:
-        raise ValueError(f"No se pudo extraer el número del SKU: '{result}'")
+        numero = int(parte_numerica)
+    except Exception:
+        raise ValueError(f"No se pudo extraer el número del SKU: '{sku}'")
 
-    # Crear el siguiente SKU
-    siguiente = numero + 1
-    nuevo_sku = f"SKU{siguiente:04d}"  # mismo que zfill(4)
+    # ----- Construir siguiente SKU -----
+    nuevo_num = numero + 1
+    nuevo_sku = f"SKU{nuevo_num:04d}"
 
     return nuevo_sku
 
@@ -157,6 +181,8 @@ Devuelve el sku_oficial si existe; de lo contrario, devuelve string vacío "".
 """
 def obtener_sku_existente(nombre_norm, categoria_norm):
     try:
+        engine = get_dw_engine()
+
         result = pd.read_sql(
             query_select_map_producto_sku_exist,
             engine,
@@ -174,6 +200,47 @@ def obtener_sku_existente(nombre_norm, categoria_norm):
 
     except Exception:
         return ""  # fallback seguro
+    
+def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
+    """
+    Valida si un SKU existe en stg.map_producto y si coinciden Nombre y Categoria.
+    Retorna True si coincide todo, False en caso contrario.
+    """
+
+    # Si sku viene vacío o None → inmediatamente False
+    if not sku:
+        print("⚠️  SKU vacío o None recibido")
+        return False
+
+    try:
+        engine = get_dw_engine()
+
+        query = text("""
+            SELECT TOP 1 sku_oficial, nombre_norm, categoria_norm
+            FROM stg.map_producto
+            WHERE sku_oficial = :sku;
+        """)
+
+        # Ejecutar con pandas
+        result = pd.read_sql(
+            query,
+            con=engine,
+            params={"sku": sku}
+        )
+
+        # Si no hay coincidencias
+        if result.empty:
+            return False
+
+        db_nombre = result.iloc[0]["nombre_norm"] or ""
+        db_categoria = result.iloc[0]["categoria_norm"] or ""
+
+        # Comparación exacta (puedo hacerla insensible a mayúsculas si quieres)
+        return (db_nombre.lower() == nombre.lower()) and (db_categoria.lower() == categoria.lower())
+
+    except Exception as e:
+        print(f"Error validando SKU en stg_map_producto: {e}")
+        return False
 
 def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
     # SKU puede estar vacío, obtener uno existente si es así
@@ -407,10 +474,18 @@ def insert_clientes_stg(clientes):
     if errores > 0:
         print(f"⚠️  Clientes procesados con {errores} errores saltados")
 
+def convertir_sku(sku: str) -> str:
+    """
+    Convierte SKU de formato 'SKU-0000' a 'SKU0000'.
+    Si no contiene guion, lo devuelve igual.
+    """
+    if "-" in sku:
+        return sku.replace("-", "")
+    return sku
+
 """ -----------------------------------------------------------------------
             Función principal de transformación de datos de Supabase
     ----------------------------------------------------------------------- """
-
 
 def transform_supabase(productos, clientes, ordenes):
     """
@@ -426,11 +501,15 @@ def transform_supabase(productos, clientes, ordenes):
             try:
                 codigo_original = producto.get("sku")
                 if codigo_original:
-                    sku_existente = obtener_sku_existente(producto.get("nombre"), producto.get("categoria"))
-                    if sku_existente:
-                        sku_nueva = sku_existente
+                    es_sku_oficial = validar_producto_en_stg(codigo_original, producto.get("nombre"), producto.get("categoria"))
+                    if es_sku_oficial:
+                        sku_nueva = convertir_sku(codigo_original)
                     else:
-                        sku_nueva = find_sku()
+                        sku_existente = obtener_sku_existente(producto.get("nombre"), producto.get("categoria"))
+                        if sku_existente:
+                            sku_nueva = sku_existente
+                        else:
+                            sku_nueva = find_sku()
                 else:
                     sku_nueva = ""
                 nombre = producto.get("nombre")

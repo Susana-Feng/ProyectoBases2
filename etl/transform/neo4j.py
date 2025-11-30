@@ -496,10 +496,18 @@ def insert_clientes_stg(clientes):
     if errores > 0:
         print(f"⚠️  Clientes procesados con {errores} errores saltados")
 
+def convertir_sku(sku: str) -> str:
+    """
+    Convierte SKU de formato 'SKU-0000' a 'SKU0000'.
+    Si no contiene guion, lo devuelve igual.
+    """
+    if "-" in sku:
+        return sku.replace("-", "")
+    return sku
+
 """ -----------------------------------------------------------------------
             Función principal de transformación de datos de Neo4j
     ----------------------------------------------------------------------- """
-
 
 def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene):
     """
@@ -517,7 +525,7 @@ def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene):
                 if codigo_original:
                     es_sku_oficial = validar_producto_en_stg(codigo_original, producto.get("nombre"), producto.get("categoria"))
                     if es_sku_oficial:
-                        sku_nueva = codigo_original
+                        sku_nueva = convertir_sku(codigo_original)
                     else:
                         sku_existente = obtener_sku_existente(producto.get("nombre"), producto.get("categoria"))
                         if sku_existente:
