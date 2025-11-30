@@ -504,7 +504,8 @@ def distribuir_productos_entre_catalogos(
 
 def _sample_order_dates(n: int) -> List[datetime]:
     start = datetime(2024, 1, 1)
-    end = datetime(2025, 12, 31, 23, 59, 59)
+    # Use yesterday as the end date to avoid future orders that won't match DimTiempo
+    end = datetime.now().replace(hour=23, minute=59, second=59) - timedelta(days=1)
     delta = (end - start).total_seconds()
     return [start + timedelta(seconds=random.randint(0, int(delta))) for _ in range(n)]
 
