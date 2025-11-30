@@ -1,34 +1,63 @@
 from configs.connections import get_supabase_client
 
+
+# -------------------------------------------
+# Pagination helper for Supabase (default limit is 1000)
+# -------------------------------------------
+def fetch_all_paginated(supabase, table_name: str, page_size: int = 1000) -> list:
+    """
+    Fetch all records from a Supabase table using pagination.
+    Supabase has a default limit of 1000 rows per query.
+    """
+    all_data = []
+    offset = 0
+
+    while True:
+        response = (
+            supabase.table(table_name)
+            .select("*")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+
+        if hasattr(response, "error") and response.error:
+            raise Exception(f"Error fetching {table_name}: {response.error}")
+
+        batch = response.data
+        if not batch:
+            break
+
+        all_data.extend(batch)
+
+        # If we got fewer records than page_size, we've reached the end
+        if len(batch) < page_size:
+            break
+
+        offset += page_size
+
+    return all_data
+
+
 # -------------------------------------------
 # 1. Crear función extract_supabase
 # -------------------------------------------
 def extract_supabase():
     """
-    Extrae los registros de múltiples tablas en Supabase
-    y devuelve un diccionario con listas de diccionarios.
+    Extrae los registros de múltiples tablas en Supabase.
+
+    Returns:
+        tuple: (clientes, productos, ordenes, orden_detalles)
     """
     supabase = get_supabase_client()
 
-    # Consultas a cada tabla
-    response_cliente = supabase.table("cliente").select("*").execute()
-    response_orden_completa = supabase.table("orden_completa").select("*").execute()
-    response_producto = supabase.table("producto").select("*").execute()
+    # Fetch all records using pagination
+    clientes = fetch_all_paginated(supabase, "cliente")
+    productos = fetch_all_paginated(supabase, "producto")
+    ordenes = fetch_all_paginated(supabase, "orden")
+    orden_detalles = fetch_all_paginated(supabase, "orden_detalle")
 
-    # Validación de errores
-    for resp in [
-        response_cliente,
-        response_orden_completa,
-        response_producto,
-    ]:
-        if hasattr(resp, "error") and resp.error:
-            raise Exception(f"Error al extraer datos: {resp.error}")
+    print(
+        f"    supab: {len(clientes)} clients | {len(productos)} products | {len(ordenes)} orders | {len(orden_detalles)} items"
+    )
 
-
-    # Mostrar estadísticas de extracción
-    print(f"[Supabase Extract] Productos extraídos: {len(response_producto.data)}")
-    print(f"[Supabase Extract] Clientes extraídos: {len(response_cliente.data)}")
-    print(f"[Supabase Extract] Órdenes extraídas: {len(response_orden_completa.data)}")
-
-    # Devolver todas las tablas como diccionario
-    return response_cliente.data, response_orden_completa.data, response_producto.data
+    return clientes, productos, ordenes, orden_detalles

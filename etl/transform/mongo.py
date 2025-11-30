@@ -131,9 +131,12 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
     # SKU puede estar vacío, obtener uno existente si es así
     if not sku_nueva:
         sku_nueva = find_sku()
+    # Ensure source_code is never empty
+    if not codigo_original:
+        codigo_original = "Sin código"
 
     with engine.connect() as conn:
-        result = conn.execute(
+        conn.execute(
             text(query_insert_map_producto),
             {
                 "source_system": "mongo",
@@ -150,7 +153,7 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
 
 def flatten_items(orden, items_flat):
     id_orden = str(orden.get("_id"))  # ObjectId → string
-    cliente_id = orden.get("cliente_id")
+    cliente_id = str(orden.get("cliente_id"))  # ObjectId → string
     fecha_orden = orden.get("fecha")
     canal = orden.get("canal")
     moneda = orden.get("moneda")
@@ -167,7 +170,7 @@ def flatten_items(orden, items_flat):
                 "canal": canal,
                 "moneda": moneda,
                 "total_orden": total,
-                "producto_id": i.get("producto_id"),
+                "producto_id": str(i.get("producto_id")),  # ObjectId → string
                 "cantidad": i.get("cantidad"),
                 "precio_unitario": i.get("precio_unit"),
                 "metadatos": metadatos,
@@ -175,21 +178,13 @@ def flatten_items(orden, items_flat):
         )
 
 
-def insert_orden_items_stg(items_flat):
+def insert_orden_items_stg(items_flat, clientes_count, productos_count):
+    """Insert order items with progress display."""
     total_items = len(items_flat)
     procesados = 0
     errores = 0
 
     for i in items_flat:
-        procesados += 1
-
-        # Mostrar progreso cada 100 items
-        if procesados % 100 == 0 or procesados == total_items:
-            print(
-                f"\r  Procesados: {procesados}/{total_items} items (errores: {errores})...",
-                end="",
-                flush=True,
-            )
         # Validar y convertir fecha
         fecha_raw = i.get("fecha")
         if fecha_raw and hasattr(fecha_raw, "date"):
@@ -231,7 +226,7 @@ def insert_orden_items_stg(items_flat):
             if not codigo_mongo:
                 errores += 1
                 continue
-        except Exception as e:
+        except Exception:
             errores += 1
             continue
 
@@ -244,12 +239,12 @@ def insert_orden_items_stg(items_flat):
                     "source_key_item": i.get("producto_id"),
                     "source_code_prod": codigo_mongo,
                     "cliente_key": i.get("cliente_id"),
-                    "fecha_raw": i.get("fecha"),
+                    "fecha_raw": str(i.get("fecha")),
                     "canal_raw": i.get("canal"),
                     "moneda": i.get("moneda"),
-                    "cantidad_raw": i.get("cantidad"),
-                    "precio_unit_raw": i.get("precio_unitario"),
-                    "total_raw": i.get("total_orden"),
+                    "cantidad_raw": str(i.get("cantidad")),
+                    "precio_unit_raw": str(i.get("precio_unitario")),
+                    "total_raw": str(i.get("total_orden")),
                     "fecha_dt": fecha_dt,
                     "cantidad_num": cantidad_num,
                     "precio_unit_num": precio_unit_num,
@@ -258,27 +253,24 @@ def insert_orden_items_stg(items_flat):
             )
             conn.commit()
 
-    # Nueva línea al finalizar
-    print()
-    if errores > 0:
-        print(f"⚠️  Items procesados con {errores} errores saltados")
+        procesados += 1
+        if (procesados + errores) % 100 == 0 or (procesados + errores) == total_items:
+            print(
+                f"\r    mongo: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
+                end="",
+                flush=True,
+            )
+
+    return procesados, errores
 
 
 def insert_clientes_stg(clientes):
+    """Insert clients with progress display."""
     total_clientes = len(clientes)
     procesados = 0
     errores = 0
 
     for cliente in clientes:
-        procesados += 1
-
-        # Mostrar progreso cada 50 clientes
-        if procesados % 50 == 0 or procesados == total_clientes:
-            print(
-                f"\r  Procesados: {procesados}/{total_clientes} clientes (errores: {errores})...",
-                end="",
-                flush=True,
-            )
         source_code = str(cliente.get("_id"))  # ObjectId → string
 
         # Validar y convertir fecha de creación
@@ -321,14 +313,19 @@ def insert_clientes_stg(clientes):
                     },
                 )
                 conn.commit()
-        except Exception as e:
+            procesados += 1
+        except Exception:
             errores += 1
             continue
 
-    # Nueva línea al finalizar
-    print()
-    if errores > 0:
-        print(f"⚠️  Clientes procesados con {errores} errores saltados")
+        if (procesados + errores) % 50 == 0 or (procesados + errores) == total_clientes:
+            print(
+                f"\r    mongo: {procesados}/{total_clientes} clients...",
+                end="",
+                flush=True,
+            )
+
+    return procesados, errores
 
 
 """ -----------------------------------------------------------------------
@@ -340,54 +337,52 @@ def transform_mongo(productos, clientes, ordenes):
     """
     Transforma y carga datos de MongoDB a staging.
     """
-    try:
-        print("[MongoDB Transform] Iniciando transformación...")
+    total_productos = len(productos)
 
-        # 1. Transformar y cargar productos al mapa
-        print(f"[MongoDB Transform] Procesando {len(productos)} productos...")
-        productos_procesados = 0
-        for producto in productos:
-            try:
-                codigo_original = producto.get("codigo_mongo")
-                sku_nueva = producto.get("equivalencias", {}).get("sku")
-                nombre = producto.get("nombre")
-                categoria = producto.get("categoria")
+    # 1. Process clients
+    clientes_procesados, clientes_errores = insert_clientes_stg(clientes)
 
-                insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
-                productos_procesados += 1
-            except Exception as e:
-                print(f"⚠️  Error procesando producto {producto.get('_id')}: {e}")
-                continue
+    # 2. Process products and create mapping table
+    productos_procesados = 0
+    productos_errores = 0
+    for producto in productos:
+        try:
+            codigo_original = producto.get("codigo_mongo")
+            sku_nueva = producto.get("equivalencias", {}).get("sku")
+            nombre = producto.get("nombre")
+            categoria = producto.get("categoria")
 
-        print(
-            f"[MongoDB Transform] Productos mapeados: {productos_procesados}/{len(productos)}"
-        )
+            insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
+            productos_procesados += 1
+        except Exception:
+            productos_errores += 1
+            continue
 
-        # 2. Flatten items de órdenes
-        print(f"[MongoDB Transform] Procesando {len(ordenes)} órdenes...")
-        items_flat = []
-        for orden in ordenes:
-            try:
-                flatten_items(orden, items_flat)  # 'normalizar' items en ordenes
-            except Exception as e:
-                print(f"⚠️  Error procesando orden {orden.get('_id')}: {e}")
-                continue
+        if (productos_procesados + productos_errores) % 50 == 0 or (
+            productos_procesados + productos_errores
+        ) == total_productos:
+            print(
+                f"\r    mongo: {clientes_procesados} clients | {productos_procesados}/{total_productos} products...",
+                end="",
+                flush=True,
+            )
 
-        print(f"[MongoDB Transform] Items extraídos de órdenes: {len(items_flat)}")
+    # 3. Flatten items from orders
+    items_flat = []
+    for orden in ordenes:
+        try:
+            flatten_items(orden, items_flat)
+        except Exception:
+            continue
 
-        # 3. Cargar items a staging
-        print(f"[MongoDB Transform] Cargando {len(items_flat)} items a staging...")
-        insert_orden_items_stg(items_flat)
+    # 4. Load order items to staging
+    items_procesados, items_errores = insert_orden_items_stg(
+        items_flat, clientes_procesados, productos_procesados
+    )
 
-        # 4. Cargar clientes a staging
-        print(f"[MongoDB Transform] Procesando {len(clientes)} clientes...")
-        insert_clientes_stg(clientes)
-
-        print("[MongoDB Transform] Transformación completada exitosamente")
-
-    except Exception as e:
-        print(f"❌ Error crítico en transform_mongo: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise
+    # Final line
+    output = f"\r    mongo: {clientes_procesados} clients | {productos_procesados} products | {items_procesados} items"
+    total_errores = clientes_errores + productos_errores + items_errores
+    if total_errores > 0:
+        output += f" | {total_errores} errors"
+    print(output + " " * 20)  # Extra spaces to clear progress indicators

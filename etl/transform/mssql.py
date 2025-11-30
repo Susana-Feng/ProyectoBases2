@@ -13,7 +13,6 @@ NOTA: Se utilizan sentencias MERGE para garantizar idempotencia del ETL.
 """
 
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import text
 
@@ -262,45 +261,48 @@ def transform_mssql(clientes, productos, ordenes, orden_detalles):
         ordenes: Lista de órdenes extraídas
         orden_detalles: Lista de detalles de órdenes extraídos
     """
-    print("[MSSQL Transform] Iniciando transformación...")
+    total_items = len(orden_detalles)
 
-    # 1. Procesar productos y crear tabla de mapeo
-    print(f"[MSSQL Transform] Procesando {len(productos)} productos...")
+    # 1. Process clients
+    for i, cliente in enumerate(clientes):
+        insert_clientes_stg(cliente)
+        if (i + 1) % 50 == 0 or i == len(clientes) - 1:
+            print(
+                f"\r    mssql: {i + 1}/{len(clientes)} clients...",
+                end="",
+                flush=True,
+            )
+
+    # 2. Process products and create mapping table
     productos_dict = {}
-    for producto in productos:
+    for i, producto in enumerate(productos):
         insert_map_producto(producto)
         productos_dict[producto.ProductoId] = producto.SKU
+        if (i + 1) % 50 == 0 or i == len(productos) - 1:
+            print(
+                f"\r    mssql: {len(clientes)} clients | {i + 1}/{len(productos)} products...",
+                end="",
+                flush=True,
+            )
 
-    # 2. Procesar clientes
-    print(f"[MSSQL Transform] Procesando {len(clientes)} clientes...")
-    for cliente in clientes:
-        insert_clientes_stg(cliente)
-
-    # 3. Procesar órdenes y detalles
-    # Crear diccionario de órdenes para acceso rápido
-    print(f"[MSSQL Transform] Procesando {len(ordenes)} órdenes...")
+    # 3. Process orders and details
     ordenes_dict = {orden.OrdenId: orden for orden in ordenes}
 
-    # Procesar cada detalle de orden
-    print(f"[MSSQL Transform] Procesando {len(orden_detalles)} detalles de órdenes...")
     items_procesados = 0
     for detalle in orden_detalles:
         orden = ordenes_dict.get(detalle.OrdenId)
         if orden:
             insert_orden_items_stg(orden, detalle, productos_dict)
             items_procesados += 1
-
-            # Mostrar progreso cada 100 items
-            if items_procesados % 100 == 0:
+            if items_procesados % 100 == 0 or items_procesados == total_items:
                 print(
-                    f"\r  Procesados: {items_procesados}/{len(orden_detalles)} items...",
+                    f"\r    mssql: {len(clientes)} clients | {len(productos)} products | {items_procesados}/{total_items} items...",
                     end="",
                     flush=True,
                 )
 
-    # Nueva línea al finalizar
-    print()
-    print(f"[MSSQL Transform] Transformación completada:")
-    print(f"  - Productos mapeados: {len(productos)}")
-    print(f"  - Clientes procesados: {len(clientes)}")
-    print(f"  - Items de órdenes procesados: {items_procesados}")
+    # Final line (extra spaces to clear progress indicators like "15000/15030 items...")
+    print(
+        f"\r    mssql: {len(clientes)} clients | {len(productos)} products | {items_procesados} items"
+        + " " * 20
+    )

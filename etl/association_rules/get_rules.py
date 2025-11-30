@@ -6,14 +6,15 @@ from configs.connections import get_dw_engine
 engine = get_dw_engine()
 
 # Parámetros del algoritmo
-MIN_SUPPORT = 0.000001     # cambiar Soporte cuando hayan mas datos disponibles ########################################
+MIN_SUPPORT = 0.000001  # cambiar Soporte cuando hayan mas datos disponibles ########################################
 MIN_CONFIDENCE = 0.6  # confianza mínima ( 60 %)
 
 query_get_transactions = """
     SELECT * 
     FROM
         dw.vw_Transacciones
-"""  
+"""
+
 
 def cargar_datos():
     return pd.read_sql(query_get_transactions, engine)
@@ -25,20 +26,20 @@ def transformar_a_one_hot(df):
     """
 
     # Paso 1: Explotir los items que vienen como strings separados por comas
-    df_exploded = df.assign(item=df['item'].str.split(', ')).explode('item')
+    df_exploded = df.assign(item=df["item"].str.split(", ")).explode("item")
 
     # Crear una tabla transacción x item
     basket = (
-        df_exploded
-        .groupby(['transaction_id', 'item'])['item']
+        df_exploded.groupby(["transaction_id", "item"])["item"]
         .count()
         .unstack()
         .fillna(0)
     )
     # Convertimos a 1/0
-    #basket = basket.applymap(lambda x: 1 if x > 0 else 0)
+    # basket = basket.applymap(lambda x: 1 if x > 0 else 0)
     basket = basket.astype(bool)
     return basket
+
 
 def generar_reglas_asociacion():
     try:
@@ -47,31 +48,21 @@ def generar_reglas_asociacion():
 
         basket = transformar_a_one_hot(df)
 
-        frequent_itemsets = apriori(
-            basket,
-            min_support=MIN_SUPPORT,
-            use_colnames=True
-        )
+        frequent_itemsets = apriori(basket, min_support=MIN_SUPPORT, use_colnames=True)
 
         # Agregar columna con el tamaño del itemset para ordenar un poco
-        frequent_itemsets['length'] = frequent_itemsets['itemsets'].apply(len)
+        frequent_itemsets["length"] = frequent_itemsets["itemsets"].apply(len)
 
         print("\n===  Reglas de asociación ===")
         rules = association_rules(
-            frequent_itemsets,
-            metric="confidence",
-            min_threshold=MIN_CONFIDENCE
+            frequent_itemsets, metric="confidence", min_threshold=MIN_CONFIDENCE
         )
 
         # Seleccionamos solo algunas columnas para mostrar
         if not rules.empty:
-            rules_to_show = rules[[
-                'antecedents',
-                'consequents',
-                'support',
-                'confidence',
-                'lift'
-            ]]
+            rules_to_show = rules[
+                ["antecedents", "consequents", "support", "confidence", "lift"]
+            ]
             print(rules_to_show)
 
             return rules

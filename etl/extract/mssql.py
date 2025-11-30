@@ -82,9 +82,8 @@ def extract_mssql():
         result_detalles = conn.execute(text(query_orden_detalles))
         orden_detalles = result_detalles.fetchall()
 
-    print(f"[MSSQL Extract] Clientes extraídos: {len(clientes)}")
-    print(f"[MSSQL Extract] Productos extraídos: {len(productos)}")
-    print(f"[MSSQL Extract] Órdenes extraídas: {len(ordenes)}")
-    print(f"[MSSQL Extract] Detalles de órdenes extraídos: {len(orden_detalles)}")
+    print(
+        f"    mssql: {len(clientes)} clients | {len(productos)} products | {len(ordenes)} orders | {len(orden_detalles)} items"
+    )
 
     return clientes, productos, ordenes, orden_detalles

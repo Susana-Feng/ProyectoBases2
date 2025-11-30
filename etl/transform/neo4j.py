@@ -1,7 +1,6 @@
 import pandas as pd
 import pycountry
 
-from bson import ObjectId
 from sqlalchemy import text
 from configs.connections import get_dw_engine, get_neo4j_driver
 from datetime import datetime
@@ -58,7 +57,7 @@ query_select_map_producto_sku = """
     FROM stg.map_producto;
 """
 
-# Para obtener sku de producto que coincida por nombre y categoria 
+# Para obtener sku de producto que coincida por nombre y categoria
 query_select_map_producto_sku_exist = """
     SELECT TOP 1
         sku_oficial AS SKU
@@ -140,6 +139,7 @@ query_insert_clientes_stg = """
             Funciones de preparacion de datos para staging de Neo4j
     ----------------------------------------------------------------------- """
 
+
 def find_sku():
     engine = get_dw_engine()
     result = pd.read_sql(query_select_map_producto_sku, engine)
@@ -160,9 +160,9 @@ def find_sku():
     # SKU0001  -> número empieza en 3
     # SKU-0001 -> número empieza en 4
     if sku.startswith("SKU-"):
-        parte_numerica = sku[4:]   # Desde después del guion
+        parte_numerica = sku[4:]  # Desde después del guion
     else:
-        parte_numerica = sku[3:]   # Desde después de "SKU"
+        parte_numerica = sku[3:]  # Desde después de "SKU"
 
     try:
         numero = int(parte_numerica)
@@ -175,10 +175,13 @@ def find_sku():
 
     return nuevo_sku
 
+
 """
 Busca un SKU existente en stg.map_producto que coincida por Nombre y Categoria.
 Devuelve el SKU oficial si existe; de lo contrario, devuelve string vacío "".
 """
+
+
 def obtener_sku_existente(nombre_norm, categoria_norm):
     try:
         engine = get_dw_engine()
@@ -186,10 +189,7 @@ def obtener_sku_existente(nombre_norm, categoria_norm):
         result = pd.read_sql(
             query_select_map_producto_sku_exist,
             engine,
-            params={
-                "nombre_norm": nombre_norm,
-                "categoria_norm": categoria_norm
-            }
+            params={"nombre_norm": nombre_norm, "categoria_norm": categoria_norm},
         )
 
         if result.empty:
@@ -200,7 +200,8 @@ def obtener_sku_existente(nombre_norm, categoria_norm):
 
     except Exception:
         return ""  # fallback seguro
-    
+
+
 def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
     """
     Valida si un SKU existe en stg.map_producto y si coinciden Nombre y Categoria.
@@ -209,7 +210,6 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
 
     # Si sku viene vacío o None → inmediatamente False
     if not sku:
-        print("⚠️  SKU vacío o None recibido")
         return False
 
     try:
@@ -222,11 +222,7 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
         """)
 
         # Ejecutar con pandas
-        result = pd.read_sql(
-            query,
-            con=engine,
-            params={"sku": sku}
-        )
+        result = pd.read_sql(query, con=engine, params={"sku": sku})
 
         # Si no hay coincidencias
         if result.empty:
@@ -235,20 +231,25 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
         db_nombre = result.iloc[0]["nombre_norm"] or ""
         db_categoria = result.iloc[0]["categoria_norm"] or ""
 
-        # Comparación exacta (puedo hacerla insensible a mayúsculas si quieres)
-        return (db_nombre.lower() == nombre.lower()) and (db_categoria.lower() == categoria.lower())
+        # Case-sensitive comparison
+        return (db_nombre.lower() == nombre.lower()) and (
+            db_categoria.lower() == categoria.lower()
+        )
 
-    except Exception as e:
-        print(f"Error validando SKU en stg_map_producto: {e}")
+    except Exception:
         return False
-    
+
+
 def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
     # SKU puede estar vacío, obtener uno existente si es así
     if not sku_nueva:
         sku_nueva = find_sku()
+    # Ensure source_code is never empty (must match source_code_prod in orden_items)
+    if not codigo_original:
+        codigo_original = "Sin código"
 
     with engine.connect() as conn:
-        result = conn.execute(
+        conn.execute(
             text(query_insert_map_producto),
             {
                 "source_system": "neo4j",
@@ -256,37 +257,37 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
                 "sku_oficial": sku_nueva,
                 "nombre_norm": nombre,
                 "categoria_norm": categoria,
-                "es_servicio": False,  
+                "es_servicio": False,
             },
         )
 
         conn.commit()
 
+
 def unir_relaciones_por_orden(rel_realizo, rel_contiente):
     """
     Une las relaciones REALIZO y CONTIENTE por el ID de la orden.
-    
+
     rel_realizo: Lista de dicts con relaciones Cliente->Orden
     rel_contiente: Lista de dicts con relaciones Orden->Producto
-    
+
     return: Lista de dicts combinados
     """
-    
+
     # Índice rápido para buscar cliente-orden por ID de orden
     index_realizo = {}
     for rel in rel_realizo:
-        orden_id = rel["to"]["id"]   # orden está en "to"
+        orden_id = rel["to"]["id"]  # orden está en "to"
         index_realizo[orden_id] = rel
-    
+
     resultado = []
 
     # Asociar cada Orden->Producto con su Cliente correspondiente
     for rel in rel_contiente:
-        orden_id = rel["from"]["id"]   # orden está en "from"
+        orden_id = rel["from"]["id"]  # orden está en "from"
 
         if orden_id not in index_realizo:
-            # Si hay productos sin cliente asociado, puedes decidir saltarlos
-            # o agregarlos con cliente=None
+            # Skip products without associated client
             continue
 
         rel_cliente_orden = index_realizo[orden_id]
@@ -295,29 +296,21 @@ def unir_relaciones_por_orden(rel_realizo, rel_contiente):
             "cliente": rel_cliente_orden["from"],
             "orden": rel_cliente_orden["to"],
             "producto": rel["to"],
-            "detalle": rel["properties"]
+            "detalle": rel["properties"],
         }
 
         resultado.append(combinado)
 
     return resultado
 
-def insert_orden_items_stg(orden_completa):
+
+def insert_orden_items_stg(orden_completa, clientes_count, productos_count):
+    """Insert order items with progress display."""
     total_items = len(orden_completa)
     procesados = 0
     errores = 0
 
     for i in orden_completa:
-        procesados += 1
-
-        # Mostrar progreso cada 100 items
-        if procesados % 100 == 0 or procesados == total_items:
-            print(
-                f"\r  Procesados: {procesados}/{total_items} items (errores: {errores})...",
-                end="",
-                flush=True,
-            )
-
         # ----------------------------------------------
         # 1. Extraer datos del registro
         # ----------------------------------------------
@@ -368,12 +361,7 @@ def insert_orden_items_stg(orden_completa):
         producto_id = producto.get("id")
         sku = producto.get("sku")
 
-        if not producto_id:
-            errores += 1
-            print("hay error con producto_id")
-            continue
-
-        if not sku:
+        if not producto_id or not sku:
             errores += 1
             continue
 
@@ -382,16 +370,16 @@ def insert_orden_items_stg(orden_completa):
                 text(query_insert_orden_item_stg),
                 {
                     "source_system": "neo4j",
-                    "source_key_orden": orden.get("id"),
-                    "source_key_item": producto_id,
+                    "source_key_orden": str(orden.get("id")),
+                    "source_key_item": str(producto_id),
                     "source_code_prod": sku or "Sin código",
-                    "cliente_key": cliente.get("id"),
+                    "cliente_key": str(cliente.get("id")),
                     "fecha_raw": fecha_str,
                     "canal_raw": orden.get("canal"),
                     "moneda": orden.get("moneda"),
-                    "cantidad_raw": detalle.get("cantidad"),
-                    "precio_unit_raw": detalle.get("precio_unit"),
-                    "total_raw": orden.get("total"),
+                    "cantidad_raw": str(detalle.get("cantidad")),
+                    "precio_unit_raw": str(detalle.get("precio_unit")),
+                    "total_raw": str(orden.get("total")),
                     "fecha_dt": fecha_dt,
                     "cantidad_num": cantidad_num,
                     "precio_unit_num": precio_unit_num,
@@ -400,10 +388,16 @@ def insert_orden_items_stg(orden_completa):
             )
             conn.commit()
 
-    # Nueva línea al finalizar
-    print()
-    if errores > 0:
-        print(f"⚠️  Items procesados con {errores} errores saltados")
+        procesados += 1
+        if (procesados + errores) % 100 == 0 or (procesados + errores) == total_items:
+            print(
+                f"\r    neo4j: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
+                end="",
+                flush=True,
+            )
+
+    return procesados, errores
+
 
 def pais_a_codigo(pais_nombre):
     """
@@ -423,27 +417,20 @@ def pais_a_codigo(pais_nombre):
             if pais_nombre.lower() in c.name.lower():
                 return c.alpha_2
 
-    except:
+    except Exception:  # noqa: BLE001
         pass
 
     return ""
 
+
 def insert_clientes_stg(clientes):
+    """Insert clients with progress display."""
     total_clientes = len(clientes)
     procesados = 0
     errores = 0
 
     for cliente in clientes:
-        procesados += 1
-
-        # Mostrar progreso cada 50 clientes
-        if procesados % 50 == 0 or procesados == total_clientes:
-            print(
-                f"\r  Procesados: {procesados}/{total_clientes} clientes (errores: {errores})...",
-                end="",
-                flush=True,
-            )
-        source_code = str(cliente.get("id"))  # ObjectId → string
+        source_code = str(cliente.get("id"))
 
         # Validar y convertir fecha de creación
         fecha_creado_dt = datetime.now().date()
@@ -465,7 +452,7 @@ def insert_clientes_stg(clientes):
         # Transformar nombre pais
         pais_nombre = cliente.get("pais")
         pais_codigo = pais_a_codigo(pais_nombre)
-        if (pais_codigo != ""):
+        if pais_codigo != "":
             pais = pais_codigo
         else:
             pais = pais_nombre
@@ -487,14 +474,20 @@ def insert_clientes_stg(clientes):
                     },
                 )
                 conn.commit()
-        except Exception as e:
+            procesados += 1
+        except Exception:
             errores += 1
             continue
 
-    # Nueva línea al finalizar
-    print()
-    if errores > 0:
-        print(f"⚠️  Clientes procesados con {errores} errores saltados")
+        if (procesados + errores) % 50 == 0 or (procesados + errores) == total_clientes:
+            print(
+                f"\r    neo4j: {procesados}/{total_clientes} clients...",
+                end="",
+                flush=True,
+            )
+
+    return procesados, errores
+
 
 def convertir_sku(sku: str) -> str:
     """
@@ -505,62 +498,72 @@ def convertir_sku(sku: str) -> str:
         return sku.replace("-", "")
     return sku
 
+
 """ -----------------------------------------------------------------------
             Función principal de transformación de datos de Neo4j
     ----------------------------------------------------------------------- """
+
 
 def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene):
     """
     Transforma y carga datos de Neo4j a staging.
     """
-    try:
-        print("[Neo4j Transform] Iniciando transformación...")
+    total_productos = len(productos)
 
-        # 1. Transformar y cargar productos al mapa
-        print(f"[Neo4j Transform] Procesando {len(productos)} productos...")
-        productos_procesados = 0
-        for producto in productos:
-            try:
-                codigo_original = producto.get("sku")
-                if codigo_original:
-                    es_sku_oficial = validar_producto_en_stg(codigo_original, producto.get("nombre"), producto.get("categoria"))
-                    if es_sku_oficial:
-                        sku_nueva = convertir_sku(codigo_original)
-                    else:
-                        sku_existente = obtener_sku_existente(producto.get("nombre"), producto.get("categoria"))
-                        if sku_existente:
-                            sku_nueva = sku_existente
-                        else:
-                            sku_nueva = find_sku()
+    # 1. Process clients
+    clientes_procesados, clientes_errores = insert_clientes_stg(clientes)
+
+    # 2. Process products and create mapping table
+    productos_procesados = 0
+    productos_errores = 0
+    for producto in productos:
+        try:
+            codigo_original = producto.get("sku")
+            if codigo_original:
+                es_sku_oficial = validar_producto_en_stg(
+                    codigo_original,
+                    producto.get("nombre"),
+                    producto.get("categoria"),
+                )
+                if es_sku_oficial:
+                    sku_nueva = convertir_sku(codigo_original)
                 else:
-                    sku_nueva = ""
-                nombre = producto.get("nombre")
-                categoria = producto.get("categoria")
+                    sku_existente = obtener_sku_existente(
+                        producto.get("nombre"), producto.get("categoria")
+                    )
+                    if sku_existente:
+                        sku_nueva = sku_existente
+                    else:
+                        sku_nueva = find_sku()
+            else:
+                sku_nueva = ""
+            nombre = producto.get("nombre")
+            categoria = producto.get("categoria")
 
-                insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
-                productos_procesados += 1
-            except Exception as e:
-                print(f"⚠️  Error procesando producto {producto.get('id')}: {e}")
-                continue
+            insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
+            productos_procesados += 1
+        except Exception:
+            productos_errores += 1
+            continue
 
-        print(
-            f"[Neo4j Transform] Productos mapeados: {productos_procesados}/{len(productos)}"
-        )
+        if (productos_procesados + productos_errores) % 50 == 0 or (
+            productos_procesados + productos_errores
+        ) == total_productos:
+            print(
+                f"\r    neo4j: {clientes_procesados} clients | {productos_procesados}/{total_productos} products...",
+                end="",
+                flush=True,
+            )
 
-        # 2. Cargar items a staging
-        ordenes = unir_relaciones_por_orden(rel_realizo, rel_contiene)
-        print(f"[Neo4j Transform] Cargando {len(ordenes)} items a staging...")
-        insert_orden_items_stg(ordenes)
+    # 3. Load order items to staging
+    ordenes = unir_relaciones_por_orden(rel_realizo, rel_contiene)
+    items_procesados, items_errores = insert_orden_items_stg(
+        ordenes, clientes_procesados, productos_procesados
+    )
 
-        # # 3. Cargar clientes a staging
-        print(f"[Neo4j Transform] Procesando {len(clientes)} clientes...")
-        insert_clientes_stg(clientes)
-
-        print("[Neo4j Transform] Transformación completada exitosamente")
-
-    except Exception as e:
-        print(f"❌ Error crítico en transform_Neo4j: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise
+    # Final line
+    output = f"\r    neo4j: {clientes_procesados} clients | {productos_procesados} products | {items_procesados} items"
+    total_errores = clientes_errores + productos_errores + items_errores
+    if total_errores > 0:
+        output += f" | {total_errores} errors"
+    print(output + " " * 20)  # Extra spaces to clear progress indicators

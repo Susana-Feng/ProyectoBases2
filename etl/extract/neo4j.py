@@ -1,5 +1,6 @@
 from configs.connections import get_neo4j_driver
 
+
 def extract_neo4j():
     """
     Extrae nodos y relaciones desde Neo4j.
@@ -25,7 +26,6 @@ def extract_neo4j():
     driver = get_neo4j_driver()
 
     with driver.session() as session:
-
         # ---------------------------------------
         # 1. EXTRAER NODOS
         # ---------------------------------------
@@ -42,8 +42,6 @@ def extract_neo4j():
                 nodes.append(dict(node))
 
             nodes_by_label[label] = nodes
-            print(f"[Neo4j Extract] {label}: {len(nodes)} nodos extraídos")
-
 
         # ---------------------------------------
         # 2. EXTRAER RELACIONES
@@ -66,21 +64,26 @@ def extract_neo4j():
             if rel_type not in relationships_by_type:
                 relationships_by_type[rel_type] = []
 
-            relationships_by_type[rel_type].append({
-                "from_label": record["from_labels"][0],
-                "from": dict(record["from_node"]),
-                "to_label": record["to_labels"][0],
-                "to": dict(record["to_node"]),
-                "properties": dict(record["rel_props"])
-            })
-
-        for rel_type, rels in relationships_by_type.items():
-            print(f"[Neo4j Extract] {rel_type}: {len(rels)} relaciones extraídas")
-
+            relationships_by_type[rel_type].append(
+                {
+                    "from_label": record["from_labels"][0],
+                    "from": dict(record["from_node"]),
+                    "to_label": record["to_labels"][0],
+                    "to": dict(record["to_node"]),
+                    "properties": dict(record["rel_props"]),
+                }
+            )
 
     driver.close()
 
-    return {
-        "nodes": nodes_by_label,
-        "relationships": relationships_by_type
-    }
+    # Extract counts for logging
+    clientes = len(nodes_by_label.get("Cliente", []))
+    productos = len(nodes_by_label.get("Producto", []))
+    ordenes = len(nodes_by_label.get("Orden", []))
+    items = len(relationships_by_type.get("CONTIENE", []))
+
+    print(
+        f"    neo4j: {clientes} clients | {productos} products | {ordenes} orders | {items} items"
+    )
+
+    return {"nodes": nodes_by_label, "relationships": relationships_by_type}

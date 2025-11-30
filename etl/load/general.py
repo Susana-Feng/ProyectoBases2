@@ -1,13 +1,12 @@
-import pandas as pd
 from configs.connections import get_dw_engine
 from sqlalchemy import text
 from datetime import datetime, timedelta
 
 engine = get_dw_engine()
 
-''' -----------------------------------------------------------------------
+""" -----------------------------------------------------------------------
             Queries de SQL para cargar el DataWarehouse
-    ----------------------------------------------------------------------- ''' 
+    ----------------------------------------------------------------------- """
 
 query_check_last_load = """
     SELECT 
@@ -16,7 +15,8 @@ query_check_last_load = """
 """
 
 query_insert_DimTime = """
-    DECLARE @FechaInicio DATE = '2022-01-01';
+    -- Start 3 years ago (matches BCCR exchange rate history)
+    DECLARE @FechaInicio DATE = DATEADD(YEAR, -3, CAST(GETDATE() AS DATE));
     DECLARE @FechaFin    DATE = CAST(GETDATE() AS DATE);
 
     ;WITH Fechas AS (
@@ -41,6 +41,23 @@ query_insert_DimTime = """
         SELECT 1 FROM dw.DimTiempo dt WHERE dt.Fecha = Fechas.Fecha
     )
     OPTION (MAXRECURSION 0);
+"""
+
+query_sync_exchange_rates = """
+    -- Sync exchange rates from stg.tipo_cambio to dw.DimTiempo
+    UPDATE dt
+    SET 
+        dt.TC_CRC_USD = tc_crc.tasa,
+        dt.TC_USD_CRC = tc_usd.tasa
+    FROM dw.DimTiempo dt
+    LEFT JOIN stg.tipo_cambio tc_crc 
+        ON tc_crc.fecha = dt.Fecha AND tc_crc.de = 'CRC' AND tc_crc.a = 'USD'
+    LEFT JOIN stg.tipo_cambio tc_usd 
+        ON tc_usd.fecha = dt.Fecha AND tc_usd.de = 'USD' AND tc_usd.a = 'CRC'
+    WHERE dt.TC_CRC_USD IS NULL 
+       OR dt.TC_USD_CRC IS NULL
+       OR dt.TC_CRC_USD != COALESCE(tc_crc.tasa, dt.TC_CRC_USD)
+       OR dt.TC_USD_CRC != COALESCE(tc_usd.tasa, dt.TC_USD_CRC);
 """
 
 query_insert_dimCliente_dw = """
@@ -163,11 +180,20 @@ query_insert_factVentas = """
         O.canal_raw,
         O.source_system,
         O.cantidad_num,
+        -- Convert to USD using official exchange rate only
+        CASE 
+            WHEN O.moneda = 'USD' THEN O.precio_unit_num
+            WHEN O.moneda = 'CRC' THEN O.precio_unit_num / T.TC_CRC_USD
+            ELSE O.precio_unit_num
+        END AS PrecioUnitUSD,
+        CASE 
+            WHEN O.moneda = 'USD' THEN O.total_num
+            WHEN O.moneda = 'CRC' THEN O.total_num / T.TC_CRC_USD
+            ELSE O.total_num
+        END AS TotalUSD,
+        O.moneda,
         O.precio_unit_num,
         O.total_num,
-        O.moneda,
-        O.precio_unit_raw,
-        O.total_raw,
         O.source_key_orden + '-' + O.source_key_item,
         GETDATE() AS LoadTS
     FROM stg.orden_items AS O
@@ -185,6 +211,8 @@ query_insert_factVentas = """
             WHERE fv.SourceKey = O.source_key_orden + '-' + O.source_key_item
             AND fv.Fuente = O.source_system
         )
+        -- Exclude CRC sales without exchange rate (must have official rate)
+        AND (O.moneda != 'CRC' OR T.TC_CRC_USD IS NOT NULL)
 """
 
 query_select_new_orders = """
@@ -199,9 +227,16 @@ query_check_existing_product = """
     WHERE SourceSystem = :SourceSystem AND SourceKey = :SourceKey
 """
 
-''' -----------------------------------------------------------------------
+query_check_existing_sku = """
+    SELECT COUNT(*) 
+    FROM dw.DimProducto 
+    WHERE SKU = :SKU
+"""
+
+""" -----------------------------------------------------------------------
             Funciones auxiliares para cargar el DataWarehouse
-    ----------------------------------------------------------------------- ''' 
+    ----------------------------------------------------------------------- """
+
 
 def get_last_load_timestamp(conn, table_name):
     """Obtiene el último timestamp de carga de una tabla del DW"""
@@ -210,58 +245,66 @@ def get_last_load_timestamp(conn, table_name):
     last_load = result.fetchone()[0]
     return last_load
 
+
 def should_run_process(conn):
     """Verifica si el proceso debe ejecutarse basado en los últimos LoadTS"""
-    
+
     # Obtener el último LoadTS de cada dimensión
     last_load_tiempo = get_last_load_timestamp(conn, "dw.DimTiempo")
     last_load_cliente = get_last_load_timestamp(conn, "dw.DimCliente")
     last_load_producto = get_last_load_timestamp(conn, "dw.DimProducto")
     last_load_ventas = get_last_load_timestamp(conn, "dw.FactVentas")
-    
+
     # Verificar si hay datos nuevos en las tablas de staging
     current_time = datetime.now()
-    
+
     # Si alguna dimensión no tiene datos recientes (menos de 24 horas), ejecutar
     time_threshold = current_time - timedelta(hours=24)
-    
-    if (last_load_tiempo < time_threshold or 
-        last_load_cliente < time_threshold or 
-        last_load_producto < time_threshold or 
-        last_load_ventas < time_threshold):
+
+    if (
+        last_load_tiempo < time_threshold
+        or last_load_cliente < time_threshold
+        or last_load_producto < time_threshold
+        or last_load_ventas < time_threshold
+    ):
         return True, "Proceso programado (más de 24 horas desde última ejecución)"
-    
+
     # Verificar si hay nuevos datos en las tablas de staging
     try:
         # Verificar nuevas órdenes
-        result = conn.execute(text(query_select_new_orders), 
-                            {'last_load_ts': last_load_ventas})
+        result = conn.execute(
+            text(query_select_new_orders), {"last_load_ts": last_load_ventas}
+        )
         new_orders = result.fetchone()[0]
-        
+
         if new_orders > 0:
             return True, f"Se encontraron {new_orders} nuevas órdenes para procesar"
-            
+
         # Verificar nuevos clientes
-        result = conn.execute(text(query_select_clientes_stg), 
-                            {'last_load_ts': last_load_cliente})
+        result = conn.execute(
+            text(query_select_clientes_stg), {"last_load_ts": last_load_cliente}
+        )
         new_clientes = len(result.fetchall())
-        
+
         if new_clientes > 0:
             return True, f"Se encontraron {new_clientes} nuevos clientes para procesar"
-            
+
     except Exception as e:
         print(f"Error en verificación: {e}")
         # Si hay error en la verificación, ejecutar el proceso por seguridad
         return True, "Error en verificación, ejecutando proceso por seguridad"
-    
+
     return False, "No hay datos nuevos para procesar"
+
 
 def get_clientes_stg(conn, last_load_ts):
     """Obtiene clientes nuevos desde el staging"""
-    result = conn.execute(text(query_select_clientes_stg), 
-                         {'last_load_ts': last_load_ts})
+    result = conn.execute(
+        text(query_select_clientes_stg), {"last_load_ts": last_load_ts}
+    )
     clientes_stg = result.fetchall()
     return clientes_stg
+
 
 def get_map_productos(conn):
     """Obtiene todos los productos desde el staging (sin load_ts)"""
@@ -269,31 +312,46 @@ def get_map_productos(conn):
     productos_stg = result.fetchall()
     return productos_stg
 
+
 def get_new_map_productos(conn):
     """Obtiene solo productos nuevos que no existen en el DW"""
     result = conn.execute(text(query_select_map_producto_new))
     productos_stg = result.fetchall()
     return productos_stg
 
+
 def product_exists(conn, source_system, source_key):
-    """Verifica si un producto ya existe en el DW"""
-    result = conn.execute(text(query_check_existing_product), {
-        'SourceSystem': source_system,
-        'SourceKey': source_key
-    })
+    """Verifica si un producto ya existe en el DW por SourceSystem/SourceKey"""
+    result = conn.execute(
+        text(query_check_existing_product),
+        {"SourceSystem": source_system, "SourceKey": source_key},
+    )
     return result.fetchone()[0] > 0
+
+
+def sku_exists(conn, sku):
+    """Verifica si un SKU ya existe en el DW"""
+    if not sku:
+        return False
+    result = conn.execute(
+        text(query_check_existing_sku),
+        {"SKU": sku},
+    )
+    return result.fetchone()[0] > 0
+
 
 def cliente_exists(conn, source_system, source_key):
     """Verifica si un cliente ya existe en el DW"""
-    result = conn.execute(text(query_check_existing_cliente), {
-        'SourceSystem': source_system,
-        'SourceKey': source_key
-    })
+    result = conn.execute(
+        text(query_check_existing_cliente),
+        {"SourceSystem": source_system, "SourceKey": source_key},
+    )
     return result.fetchone()[0] > 0
 
+
 def load_dim_tiempo(conn):
-    """Carga DimTiempo solo si es necesario"""
-    # Verificar si ya tenemos fechas hasta hoy
+    """Load DimTiempo and sync exchange rates from stg.tipo_cambio"""
+    # Check if we have dates up to today
     query_check_dates = """
         SELECT MAX(Fecha) AS MaxFecha 
         FROM dw.DimTiempo
@@ -301,171 +359,274 @@ def load_dim_tiempo(conn):
     """
     result = conn.execute(text(query_check_dates))
     max_fecha = result.fetchone()[0]
-    
+
     current_date = datetime.now().date()
-    
-    if max_fecha and max_fecha >= current_date:
-        print("DimTiempo ya está actualizado hasta la fecha actual")
-        return False
-    else:
-        print("Actualizando DimTiempo...")
+    dates_status = "up to date"
+
+    if not max_fecha or max_fecha < current_date:
         conn.exec_driver_sql(query_insert_DimTime)
-        return True
+        dates_status = "dates updated"
+
+    # Always sync exchange rates from stg.tipo_cambio
+    result = conn.execute(text(query_sync_exchange_rates))
+    tc_synced = result.rowcount
+
+    if tc_synced > 0:
+        return f"{dates_status}, {tc_synced} exchange rates synced"
+    return dates_status
+
 
 def load_dim_cliente(conn):
     """Carga solo clientes nuevos, evitando duplicados"""
     last_load_ts = get_last_load_timestamp(conn, "dw.DimCliente")
     clientes_stg = get_clientes_stg(conn, last_load_ts)
-    
+
     if not clientes_stg:
-        print("No hay nuevos clientes para cargar")
-        return 0
-    
-    print(f"Procesando {len(clientes_stg)} clientes del staging...")
-    
+        return 0, 0
+
     loaded_count = 0
     skipped_count = 0
-    
+
     for cliente in clientes_stg:
-        # Doble verificación para evitar duplicados
+        # Double check to avoid duplicates
         if not cliente_exists(conn, cliente.sourceSystem, cliente.sourceCode):
-            conn.execute(text(query_insert_dimCliente_dw), {
-                'sourceSystem': cliente.sourceSystem, 
-                'sourceKey': cliente.sourceCode,
-                'Email': cliente.Email, 
-                'Nombre': cliente.Nombre, 
-                'Genero': cliente.Genero, 
-                'Pais': cliente.Pais,
-                'FechaCreacion': cliente.FechaCreacion
-            })
+            conn.execute(
+                text(query_insert_dimCliente_dw),
+                {
+                    "sourceSystem": cliente.sourceSystem,
+                    "sourceKey": cliente.sourceCode,
+                    "Email": cliente.Email,
+                    "Nombre": cliente.Nombre,
+                    "Genero": cliente.Genero,
+                    "Pais": cliente.Pais,
+                    "FechaCreacion": cliente.FechaCreacion,
+                },
+            )
             loaded_count += 1
         else:
             skipped_count += 1
-    
-    print(f"  Clientes cargados: {loaded_count}, omitidos (duplicados): {skipped_count}")
-    return loaded_count
+
+    return loaded_count, skipped_count
+
 
 def load_dim_producto(conn):
     """Carga productos - maneja la falta de load_ts en map_producto"""
-    
-    # Opción 1: Cargar solo productos nuevos (recomendado para producción)
+
+    # Load only new products (recommended for production)
     productos_stg = get_new_map_productos(conn)
-    
+
     if not productos_stg:
-        print("No hay nuevos productos para cargar")
         return 0
-    
-    print(f"Cargando {len(productos_stg)} nuevos productos...")
-    
+
     loaded_count = 0
+    skipped_count = 0
     for producto in productos_stg:
-        # Doble verificación para evitar duplicados
-        if not product_exists(conn, producto.SourceSystem, producto.SourceKey):
-            conn.execute(text(query_insert_dimProducto_dw), {
-                'SourceSystem': producto.SourceSystem, 
-                'SourceKey': producto.SourceKey,
-                'SKU': producto.SKU, 
-                'Nombre': producto.Nombre, 
-                'Categoria': producto.Categoria,
-                'EsServicio': producto.EsServicio,
-            })
-            loaded_count += 1
-    
+        # Check by (SourceSystem, SourceKey) AND by SKU to avoid duplicates
+        if product_exists(conn, producto.SourceSystem, producto.SourceKey):
+            skipped_count += 1
+            continue
+        if sku_exists(conn, producto.SKU):
+            # SKU already exists from another source, skip
+            skipped_count += 1
+            continue
+
+        conn.execute(
+            text(query_insert_dimProducto_dw),
+            {
+                "SourceSystem": producto.SourceSystem,
+                "SourceKey": producto.SourceKey,
+                "SKU": producto.SKU,
+                "Nombre": producto.Nombre,
+                "Categoria": producto.Categoria,
+                "EsServicio": producto.EsServicio,
+            },
+        )
+        loaded_count += 1
+
     return loaded_count
+
 
 def load_dim_producto_initial(conn):
     """Carga inicial de todos los productos (usar solo primera vez)"""
     productos_stg = get_map_productos(conn)
-    
+
     if not productos_stg:
-        print("No hay productos para cargar")
         return 0
-    
-    print(f"Cargando {len(productos_stg)} productos (carga inicial)...")
-    
+
     loaded_count = 0
     for producto in productos_stg:
-        # Solo insertar si no existe
-        if not product_exists(conn, producto.SourceSystem, producto.SourceKey):
-            conn.execute(text(query_insert_dimProducto_dw), {
-                'SourceSystem': producto.SourceSystem, 
-                'SourceKey': producto.SourceKey,
-                'SKU': producto.SKU, 
-                'Nombre': producto.Nombre, 
-                'Categoria': producto.Categoria,
-                'EsServicio': producto.EsServicio,
-            })
-            loaded_count += 1
-    
-    print(f"Se cargaron {loaded_count} nuevos productos de {len(productos_stg)} encontrados")
+        # Check by (SourceSystem, SourceKey) AND by SKU to avoid duplicates
+        if product_exists(conn, producto.SourceSystem, producto.SourceKey):
+            continue
+        if sku_exists(conn, producto.SKU):
+            continue
+
+        conn.execute(
+            text(query_insert_dimProducto_dw),
+            {
+                "SourceSystem": producto.SourceSystem,
+                "SourceKey": producto.SourceKey,
+                "SKU": producto.SKU,
+                "Nombre": producto.Nombre,
+                "Categoria": producto.Categoria,
+                "EsServicio": producto.EsServicio,
+            },
+        )
+        loaded_count += 1
+
     return loaded_count
+
 
 def load_fact_ventas(conn):
     """Carga solo ventas nuevas, evitando duplicados"""
     last_load_ts = get_last_load_timestamp(conn, "dw.FactVentas")
-    
-    # Verificar si hay nuevas ventas en staging
-    result = conn.execute(text(query_select_new_orders), 
-                         {'last_load_ts': last_load_ts})
+
+    count_fact_ventas_query = "SELECT COUNT(*) FROM dw.FactVentas"
+
+    # Check if there are new sales in staging
+    result = conn.execute(text(query_select_new_orders), {"last_load_ts": last_load_ts})
     new_records = result.fetchone()[0]
-    
+
     if new_records == 0:
-        print("No hay nuevas ventas para cargar")
-        return 0
-    
-    print(f"Procesando {new_records} ventas del staging...")
-    
-    # Contar cuántos registros había antes
-    count_before_query = "SELECT COUNT(*) FROM dw.FactVentas"
-    count_before = conn.execute(text(count_before_query)).fetchone()[0]
-    
-    # Insertar (el query ya tiene NOT EXISTS para evitar duplicados)
-    conn.execute(text(query_insert_factVentas), 
-                {'last_load_ts': last_load_ts})
-    
-    # Contar cuántos registros hay después
-    count_after = conn.execute(text(count_before_query)).fetchone()[0]
-    
+        return 0, 0, None
+
+    # Count records before
+    count_before = conn.execute(text(count_fact_ventas_query)).fetchone()[0]
+
+    # Insert (query already has NOT EXISTS to avoid duplicates)
+    conn.execute(text(query_insert_factVentas), {"last_load_ts": last_load_ts})
+
+    # Count records after
+    count_after = conn.execute(text(count_fact_ventas_query)).fetchone()[0]
+
     loaded_count = count_after - count_before
     skipped_count = new_records - loaded_count
-    
-    print(f"  Ventas cargadas: {loaded_count}, omitidas (duplicados): {skipped_count}")
-    return loaded_count
 
-''' -----------------------------------------------------------------------
-            Funcion principal para cargar el DataWarehouse
-    ----------------------------------------------------------------------- ''' 
+    # Diagnostic: check why records were skipped
+    diagnostics = None
+    diagnostic_query = """
+        SELECT 
+            'No DimTiempo' AS Reason,
+            COUNT(*) AS Count
+        FROM stg.orden_items O
+        WHERE O.load_ts > :last_load_ts
+            AND NOT EXISTS (SELECT 1 FROM dw.DimTiempo T WHERE T.Fecha = O.fecha_dt)
+        UNION ALL
+        SELECT 
+            'No DimCliente' AS Reason,
+            COUNT(*) AS Count
+        FROM stg.orden_items O
+        WHERE O.load_ts > :last_load_ts
+            AND NOT EXISTS (
+                SELECT 1 FROM dw.DimCliente C 
+                WHERE C.SourceKey = O.cliente_key AND C.SourceSystem = O.source_system
+            )
+        UNION ALL
+        SELECT 
+            'No DimProducto' AS Reason,
+            COUNT(*) AS Count
+        FROM stg.orden_items O
+        WHERE O.load_ts > :last_load_ts
+            AND NOT EXISTS (
+                SELECT 1 FROM dw.DimProducto P 
+                WHERE P.SourceKey = O.source_code_prod AND P.SourceSystem = O.source_system
+            )
+        UNION ALL
+        SELECT 
+            'Duplicate' AS Reason,
+            COUNT(*) AS Count
+        FROM stg.orden_items O
+        WHERE O.load_ts > :last_load_ts
+            AND EXISTS (
+                SELECT 1 FROM dw.FactVentas fv
+                WHERE fv.SourceKey = O.source_key_orden + '-' + O.source_key_item
+                AND fv.Fuente = O.source_system
+            )
+        UNION ALL
+        SELECT 
+            'CRC without exchange rate (run BCCR job)' AS Reason,
+            COUNT(*) AS Count
+        FROM stg.orden_items O
+        INNER JOIN dw.DimTiempo T ON T.Fecha = O.fecha_dt
+        WHERE O.load_ts > :last_load_ts
+            AND O.moneda = 'CRC'
+            AND T.TC_CRC_USD IS NULL
+    """
+    diag_result = conn.execute(text(diagnostic_query), {"last_load_ts": last_load_ts})
+    diagnostics = [(row.Reason, row.Count) for row in diag_result if row.Count > 0]
+
+    return loaded_count, skipped_count, diagnostics if diagnostics else None
+
+
+def check_exchange_rate_coverage(conn):
+    """Check for dates with CRC sales but no exchange rate after sync"""
+    query = """
+        SELECT 
+            COUNT(DISTINCT O.fecha_dt) AS missing_dates,
+            COUNT(*) AS missing_records
+        FROM stg.orden_items O
+        INNER JOIN dw.DimTiempo T ON T.Fecha = O.fecha_dt
+        WHERE O.moneda = 'CRC' AND T.TC_CRC_USD IS NULL
+    """
+    result = conn.execute(text(query))
+    row = result.fetchone()
+    return row[0], row[1]  # dates, records
+
+
+""" -----------------------------------------------------------------------
+            Main function to load the DataWarehouse
+    ----------------------------------------------------------------------- """
+
 
 def load_datawarehouse():
     try:
         with engine.begin() as conn:
-            # Verificar si el proceso debe ejecutarse
+            # Check if process should run
             should_run, reason = should_run_process(conn)
-            
-            if not should_run:
-                print(f"El proceso no se ejecutará: {reason}")
-                return {
-                    'executed': False,
-                    'reason': reason,
-                    'details': {
-                        'dim_tiempo_updated': False,
-                        'clientes_loaded': 0,
-                        'productos_loaded': 0,
-                        'ventas_loaded': 0
-                    }
-                }
-            
-            print("Iniciando carga del DataWarehouse")
-            
-            # Ejecutar las cargas
-            load_dim_tiempo(conn)
-            load_dim_cliente(conn)
-            load_dim_producto(conn)  
-            load_fact_ventas(conn)
 
-            
-            return "Carga del DataWarehouse completada exitosamente!"
-            
+            if not should_run:
+                print(f"    Skipped: {reason}")
+                return {"executed": False, "reason": reason}
+
+            # Execute loads - DimTiempo now also syncs exchange rates from stg.tipo_cambio
+            tiempo_status = load_dim_tiempo(conn)
+
+            # Check exchange rate coverage AFTER sync
+            missing_dates, missing_records = check_exchange_rate_coverage(conn)
+            if missing_dates > 0:
+                print(
+                    f"    WARNING: {missing_records} CRC sales on {missing_dates} dates have no exchange rate"
+                )
+                print(
+                    "             These will be EXCLUDED until BCCR job provides rates"
+                )
+
+            clientes_loaded, clientes_skipped = load_dim_cliente(conn)
+            productos_loaded = load_dim_producto(conn)
+            ventas_loaded, ventas_skipped, diagnostics = load_fact_ventas(conn)
+
+            # Print summary
+            print(f"    DimTiempo: {tiempo_status}")
+
+            cliente_msg = f"    DimCliente: {clientes_loaded} loaded"
+            if clientes_skipped > 0:
+                cliente_msg += f", {clientes_skipped} skipped"
+            print(cliente_msg)
+
+            print(f"    DimProducto: {productos_loaded} loaded")
+
+            ventas_msg = f"    FactVentas: {ventas_loaded} loaded"
+            if ventas_skipped > 0:
+                ventas_msg += f", {ventas_skipped} skipped"
+            print(ventas_msg)
+
+            # Show diagnostics if there were skipped records
+            if diagnostics:
+                for reason, count in diagnostics:
+                    print(f"      - {reason}: {count}")
+
+            return "OK"
+
     except Exception as e:
-        print(f"Error durante la carga del DataWarehouse: {str(e)}")
+        print(f"    Error: {str(e)}")
         raise

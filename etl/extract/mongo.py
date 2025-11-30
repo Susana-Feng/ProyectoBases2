@@ -17,9 +17,11 @@ def extract_mongo():
     lista_clientes = list(clients_collection.find())
     lista_ordenes = list(orders_collection.find())
 
-    # Mostrar estadísticas de extracción
-    print(f"[MongoDB Extract] Productos extraídos: {len(lista_productos)}")
-    print(f"[MongoDB Extract] Clientes extraídos: {len(lista_clientes)}")
-    print(f"[MongoDB Extract] Órdenes extraídas: {len(lista_ordenes)}")
+    # Count total items from orders
+    total_items = sum(len(orden.get("items", [])) for orden in lista_ordenes)
+
+    print(
+        f"    mongo: {len(lista_clientes)} clients | {len(lista_productos)} products | {len(lista_ordenes)} orders | {total_items} items"
+    )
 
     return lista_productos, lista_clientes, lista_ordenes
