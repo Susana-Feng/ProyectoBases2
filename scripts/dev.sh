@@ -569,6 +569,7 @@ run_prisma_tasks() {
 	if [[ "$stack" != "mssql" && "$stack" != "mysql" ]]; then
 		return
 	fi
+	maybe_configure_backend_env "$stack"
 	ensure_command bun
 	if [[ ! -f "$path/package.json" ]]; then
 		log_warn "No hay package.json en $path para ejecutar Prisma"
