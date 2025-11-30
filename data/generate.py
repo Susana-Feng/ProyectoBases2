@@ -149,6 +149,21 @@ COLORES = ["Negro", "Blanco", "Azul", "Rojo", "Gris", "Verde"]
 TALLAS = ["S", "M", "L", "XL"]
 PRESENTACIONES_ALIMENTO = ["250 g", "500 g", "1 kg", "2 kg"]
 
+# Patrones de asociación entre categorías de productos
+# Cuando se compra un producto de la primera categoría, hay probabilidad de comprar de la segunda
+CATEGORIAS_RELACIONADAS = [
+    ("Electrónica", "Electrónica", 0.4),      # Accesorios de electrónica
+    ("Ropa", "Ropa", 0.5),                     # Conjuntos de ropa
+    ("Deportes", "Ropa", 0.3),                 # Ropa deportiva
+    ("Deportes", "Deportes", 0.4),             # Equipo deportivo relacionado
+    ("Hogar", "Hogar", 0.35),                  # Artículos del hogar complementarios
+    ("Oficina", "Oficina", 0.45),              # Suministros de oficina
+    ("Alimentos", "Alimentos", 0.5),           # Productos alimenticios
+    ("Juguetes", "Juguetes", 0.4),             # Juguetes relacionados
+    ("Electrónica", "Hogar", 0.2),             # Electrónica para el hogar
+    ("Libros", "Libros", 0.35),                # Libros relacionados
+]
+
 # Variables globales para unicidad de clientes
 nombres_usados = set()
 correos_usados = set()
@@ -408,6 +423,84 @@ def generar_universo_productos(num_productos: int = 600) -> List[Dict[str, Any]]
     return productos
 
 
+def seleccionar_productos_con_asociacion(
+    productos: List[Dict[str, Any]], 
+    num_items: int,
+    probabilidad_asociacion: float = 0.6
+) -> List[Dict[str, Any]]:
+    """
+    Selecciona productos con patrones de asociación para generar reglas de asociación.
+    
+    Cuando se selecciona un producto de una categoría, hay probabilidad de también
+    seleccionar otro producto de una categoría relacionada.
+    
+    Args:
+        productos: Lista de productos disponibles
+        num_items: Número de items a seleccionar
+        probabilidad_asociacion: Probabilidad de aplicar la regla de asociación
+    
+    Returns:
+        Lista de productos seleccionados
+    """
+    if num_items <= 0:
+        return []
+    
+    # Agrupar productos por categoría para búsqueda eficiente
+    por_categoria: Dict[str, List[Dict[str, Any]]] = {}
+    for p in productos:
+        cat = p.get("categoria", "Otros")
+        if cat not in por_categoria:
+            por_categoria[cat] = []
+        por_categoria[cat].append(p)
+    
+    seleccionados: List[Dict[str, Any]] = []
+    productos_ids_usados: set = set()
+    
+    # Seleccionar primer producto aleatoriamente
+    primer_prod = random.choice(productos)
+    seleccionados.append(primer_prod)
+    productos_ids_usados.add(id(primer_prod))
+    
+    intentos = 0
+    max_intentos = num_items * 10  # Evitar loops infinitos
+    
+    while len(seleccionados) < num_items and intentos < max_intentos:
+        intentos += 1
+        
+        # Decidir si aplicar asociación o selección aleatoria
+        if random.random() < probabilidad_asociacion and seleccionados:
+            # Tomar el último producto y buscar uno relacionado
+            ultimo = seleccionados[-1]
+            cat_ultimo = ultimo.get("categoria", "Otros")
+            
+            # Buscar categorías relacionadas
+            categorias_candidatas = []
+            for cat1, cat2, prob in CATEGORIAS_RELACIONADAS:
+                if cat1 == cat_ultimo and random.random() < prob:
+                    categorias_candidatas.append(cat2)
+            
+            # Si hay categorías candidatas, seleccionar una
+            if categorias_candidatas:
+                cat_relacionada = random.choice(categorias_candidatas)
+                if cat_relacionada in por_categoria:
+                    candidatos = [p for p in por_categoria[cat_relacionada] 
+                                  if id(p) not in productos_ids_usados]
+                    if candidatos:
+                        nuevo = random.choice(candidatos)
+                        seleccionados.append(nuevo)
+                        productos_ids_usados.add(id(nuevo))
+                        continue
+        
+        # Selección aleatoria si no se aplicó asociación
+        candidatos = [p for p in productos if id(p) not in productos_ids_usados]
+        if candidatos:
+            nuevo = random.choice(candidatos)
+            seleccionados.append(nuevo)
+            productos_ids_usados.add(id(nuevo))
+    
+    return seleccionados
+
+
 def distribuir_productos_entre_catalogos(
     productos_universo: List[Dict[str, Any]],
     p_mssql: float = 0.9,
@@ -527,8 +620,11 @@ def generate_orders_mysql(num_orders: int, clientes: List[Dict[str, Any]], produ
         num_items = random.randint(1, 5)
         total_decimal = 0.0
         order_details: List[Dict[str, Any]] = []
-        for _ in range(num_items):
-            prod = random.choice(productos)
+        
+        # Seleccionar productos con patrones de asociación
+        productos_orden = seleccionar_productos_con_asociacion(productos, num_items)
+        
+        for prod in productos_orden:
             prod_idx = codigo_to_idx.get(prod["codigo_alt"], 1)
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
@@ -591,8 +687,11 @@ def generate_orders_mssql(num_orders: int, clientes: List[Dict[str, Any]], produ
         num_items = random.randint(1, 5)
         total = 0.0
         line_items = []
-        for _ in range(num_items):
-            prod = random.choice(productos)
+        
+        # Seleccionar productos con patrones de asociación
+        productos_orden = seleccionar_productos_con_asociacion(productos, num_items)
+        
+        for prod in productos_orden:
             prod_idx = sku_to_idx.get(prod["sku"], 1)
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
@@ -764,8 +863,10 @@ def generate_orders_supabase(num_orders: int, clientes: List[Dict[str, Any]], pr
         num_items = random.randint(1, 5)
         total = 0.0
 
-        for _ in range(num_items):
-            prod = random.choice(productos)
+        # Seleccionar productos con patrones de asociación
+        productos_orden = seleccionar_productos_con_asociacion(productos, num_items)
+
+        for prod in productos_orden:
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
             total += cantidad * precio
@@ -892,8 +993,11 @@ def generate_orders_mongo(num_orders: int, clientes: List[Dict[str, Any]], produ
         num_items = random.randint(1, 5)
         items = []
         total = 0
-        for _ in range(num_items):
-            prod = random.choice(productos)
+        
+        # Seleccionar productos con patrones de asociación
+        productos_orden = seleccionar_productos_con_asociacion(productos, num_items)
+        
+        for prod in productos_orden:
             cantidad = random.randint(1, 5)
             precio_unit = random.randint(1000, 60000)
             total += cantidad * precio_unit
@@ -1032,8 +1136,11 @@ def generate_orders_neo4j(num_orders: int, clientes: List[Dict[str, Any]], produ
         moneda = random.choice(monedas)
         num_items = random.randint(1, 5)
         total = 0.0
-        for _ in range(num_items):
-            prod = random.choice(productos)
+        
+        # Seleccionar productos con patrones de asociación
+        productos_orden = seleccionar_productos_con_asociacion(productos, num_items)
+        
+        for prod in productos_orden:
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
             total += cantidad * precio
