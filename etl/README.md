@@ -13,10 +13,10 @@ Este paquete contiene extractores, transformaciones y cargas (ETL) y jobs progra
 ### Implementadas
 - ✅ **MongoDB**: Base de datos de documentos con órdenes en CRC
 - ✅ **MS SQL Server (DB_SALES)**: Base de datos transaccional con SKU oficial en USD
+- ✅ **PostgreSQL/Supabase**: UUIDs, productos sin SKU (servicios)
 
 ### Pendientes
 - ⏳ **MySQL**: Códigos alternos, precios en string, fechas en texto
-- ⏳ **PostgreSQL/Supabase**: UUIDs, productos sin SKU (servicios)
 - ⏳ **Neo4j**: Grafo de compras
 
 ## Requisitos
