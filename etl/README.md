@@ -63,6 +63,22 @@ Esto ejecutará:
 2. Transformación y carga a staging
 3. Carga al Data Warehouse (dimensiones y hechos)
 
+### Ejecutar ETL filtrado por fuentes
+Puedes limitar el proceso a una o varias bases usando `--db` (se puede repetir o pasar valores separados por coma). Ejemplos:
+
+```bash
+# Solo MS SQL Server
+uv run python main.py --db mssql
+
+# MySQL + Supabase
+uv run python main.py --db mysql,supabase
+
+# Todas las fuentes disponibles
+uv run python main.py --db all
+```
+
+Si no se especifica `--db`, se procesan MS SQL Server, MySQL y Supabase por defecto.
+
 ### Testing de ETL específico
 
 **MS SQL Server:**

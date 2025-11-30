@@ -3,7 +3,7 @@ extract/mysql.py
 Extracción de datos desde la base de datos transaccional DB_SALES en MySQL.
 
 Heterogeneidades de MySQL:
-- Género: ENUM('M','F','X') 
+- Género: ENUM('M','F','X')
 - Moneda: Puede ser 'USD' o 'CRC'
 - Canal: libre (no controlado)
 - Fechas: Almacenadas como VARCHAR (YYYY-MM-DD o YYYY-MM-DD HH:MM:SS)
@@ -89,9 +89,8 @@ def extract_mysql():
         result_detalles = conn.execute(text(query_orden_detalles))
         orden_detalles = result_detalles.fetchall()
 
-    print(f"[MySQL Extract] Clientes extraídos: {len(clientes)}")
-    print(f"[MySQL Extract] Productos extraídos: {len(productos)}")
-    print(f"[MySQL Extract] Órdenes extraídas: {len(ordenes)}")
-    print(f"[MySQL Extract] Detalles de órdenes extraídos: {len(orden_detalles)}")
+    print(
+        f"    mysql: {len(clientes)} clients | {len(productos)} products | {len(ordenes)} orders | {len(orden_detalles)} items"
+    )
 
     return clientes, productos, ordenes, orden_detalles

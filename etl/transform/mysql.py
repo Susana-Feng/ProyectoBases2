@@ -15,7 +15,6 @@ NOTA: Se utilizan sentencias MERGE para garantizar idempotencia del ETL.
 """
 
 from datetime import datetime
-from decimal import Decimal
 import re
 
 from sqlalchemy import text
@@ -155,18 +154,18 @@ query_find_sku_by_codigo_alt = """
 def normalizar_genero(genero_raw):
     """
     Normaliza el género de MySQL (M/F/X) al formato estándar del DW.
-    
+
     Args:
         genero_raw: Valor original del género
-    
+
     Returns:
         str: 'Masculino', 'Femenino' o 'No especificado'
     """
     if genero_raw is None:
         return "No especificado"
-    
+
     genero_upper = str(genero_raw).upper().strip()
-    
+
     if genero_upper == "M":
         return "Masculino"
     elif genero_upper == "F":
@@ -181,18 +180,18 @@ def normalizar_canal(canal_raw):
     """
     Normaliza el canal de venta al formato estándar del DW.
     MySQL no tiene restricción en el canal, puede venir cualquier valor.
-    
+
     Args:
         canal_raw: Valor original del canal
-    
+
     Returns:
         str: Canal normalizado
     """
     if canal_raw is None:
         return "WEB"
-    
+
     canal_upper = str(canal_raw).upper().strip()
-    
+
     # Mapeo de canales conocidos
     canal_map = {
         "WEB": "WEB",
@@ -204,7 +203,7 @@ def normalizar_canal(canal_raw):
         "MOVIL": "APP",
         "MOBILE": "APP",
     }
-    
+
     return canal_map.get(canal_upper, canal_upper)
 
 
@@ -212,18 +211,18 @@ def parsear_fecha(fecha_str):
     """
     Parsea una fecha en formato VARCHAR a objeto date.
     MySQL almacena fechas como 'YYYY-MM-DD' o 'YYYY-MM-DD HH:MM:SS'
-    
+
     Args:
         fecha_str: String con la fecha
-    
+
     Returns:
         date: Objeto date o None si no se puede parsear
     """
     if fecha_str is None:
         return None
-    
+
     fecha_str = str(fecha_str).strip()
-    
+
     # Intentar diferentes formatos
     formatos = [
         "%Y-%m-%d %H:%M:%S",
@@ -231,13 +230,13 @@ def parsear_fecha(fecha_str):
         "%d/%m/%Y",
         "%d-%m-%Y",
     ]
-    
+
     for fmt in formatos:
         try:
             return datetime.strptime(fecha_str, fmt).date()
         except ValueError:
             continue
-    
+
     return None
 
 
@@ -245,42 +244,42 @@ def parsear_monto(monto_str):
     """
     Parsea un monto en formato VARCHAR a float.
     MySQL almacena montos como '1200.50' o '1,200.50'
-    
+
     Args:
         monto_str: String con el monto
-    
+
     Returns:
         float: Monto como número o 0.0 si no se puede parsear
     """
     if monto_str is None:
         return 0.0
-    
+
     monto_str = str(monto_str).strip()
-    
+
     # Remover caracteres no numéricos excepto punto y coma
     # Detectar si usa coma como separador decimal (europeo) o como miles
-    
+
     # Si tiene punto y coma, asumir coma = miles, punto = decimal
-    if ',' in monto_str and '.' in monto_str:
+    if "," in monto_str and "." in monto_str:
         # Formato 1,200.50 (coma miles, punto decimal)
-        monto_str = monto_str.replace(',', '')
-    elif ',' in monto_str:
+        monto_str = monto_str.replace(",", "")
+    elif "," in monto_str:
         # Detectar si la coma es decimal o miles
         # Si hay 3 dígitos después de la coma, es separador de miles
         # Si hay 1-2 dígitos después de la coma, es decimal
-        partes = monto_str.split(',')
+        partes = monto_str.split(",")
         if len(partes) == 2 and len(partes[1]) <= 2:
             # Coma como decimal (formato europeo 1200,50)
-            monto_str = monto_str.replace(',', '.')
+            monto_str = monto_str.replace(",", ".")
         else:
             # Coma como miles (formato 1,200)
-            monto_str = monto_str.replace(',', '')
-    
+            monto_str = monto_str.replace(",", "")
+
     try:
         return float(monto_str)
     except ValueError:
         # Limpiar cualquier caracter no numérico
-        monto_limpio = re.sub(r'[^\d.]', '', monto_str)
+        monto_limpio = re.sub(r"[^\d.]", "", monto_str)
         try:
             return float(monto_limpio)
         except ValueError:
@@ -290,7 +289,7 @@ def parsear_monto(monto_str):
 def get_next_sku():
     """
     Obtiene el siguiente SKU disponible de la secuencia.
-    
+
     Returns:
         str: SKU en formato 'SKUxxxx'
     """
@@ -312,11 +311,11 @@ def insert_map_producto(producto, sku_mapping):
     Inserta un producto en la tabla stg.map_producto.
     Para MySQL, el source_code es el codigo_alt ya que es lo que identifica
     de manera única al producto y es lo que se referencia en OrdenDetalle.
-    
+
     Args:
         producto: Row con datos del producto (id, codigo_alt, nombre, categoria)
         sku_mapping: Dict para rastrear SKUs asignados
-    
+
     Returns:
         str: SKU asignado al producto
     """
@@ -325,7 +324,7 @@ def insert_map_producto(producto, sku_mapping):
     codigo_alt = producto.codigo_alt
     nombre = producto.nombre
     categoria = producto.categoria
-    
+
     # Generar un nuevo SKU para este producto de MySQL
     if codigo_alt in sku_mapping:
         sku_oficial = sku_mapping[codigo_alt]
@@ -346,7 +345,7 @@ def insert_map_producto(producto, sku_mapping):
             },
         )
         conn.commit()
-    
+
     return sku_oficial
 
 
@@ -359,7 +358,7 @@ def insert_clientes_stg(cliente):
     """
     source_code = str(cliente.id)
     genero_raw = cliente.genero
-    
+
     # Normalización de género (MySQL usa M/F/X)
     genero_norm = normalizar_genero(genero_raw)
 
@@ -377,7 +376,9 @@ def insert_clientes_stg(cliente):
                 "cliente_nombre": cliente.nombre,
                 "genero_raw": genero_raw,
                 "pais_raw": cliente.pais,
-                "fecha_creado_raw": str(fecha_creado_raw) if fecha_creado_raw else "1900-01-01",
+                "fecha_creado_raw": str(fecha_creado_raw)
+                if fecha_creado_raw
+                else "1900-01-01",
                 "fecha_creado_dt": fecha_creado_dt,
                 "genero_norm": genero_norm,
             },
@@ -400,7 +401,7 @@ def insert_orden_items_stg(orden, detalle, productos_dict):
     # Parsear fecha (viene como VARCHAR en MySQL)
     fecha_raw = orden.fecha
     fecha_dt = parsear_fecha(fecha_raw)
-    
+
     if fecha_dt is None:
         # Si no se puede parsear la fecha, usar fecha por defecto
         fecha_dt = datetime.now().date()
@@ -411,7 +412,7 @@ def insert_orden_items_stg(orden, detalle, productos_dict):
     # Parsear montos (vienen como VARCHAR en MySQL)
     cantidad_num = float(detalle.cantidad) if detalle.cantidad else 0.0
     precio_unit_num = parsear_monto(detalle.precio_unit)
-    
+
     # Calcular total del item
     total_item = cantidad_num * precio_unit_num
 
@@ -457,30 +458,36 @@ def transform_mysql(clientes, productos, ordenes, orden_detalles):
         ordenes: Lista de órdenes extraídas
         orden_detalles: Lista de detalles de órdenes extraídos
     """
-    print("[MySQL Transform] Iniciando transformación...")
+    total_items = len(orden_detalles)
 
-    # Diccionario para rastrear SKUs asignados
+    # Dictionary to track assigned SKUs
     sku_mapping = {}
 
-    # 1. Procesar productos y crear tabla de mapeo
-    print(f"[MySQL Transform] Procesando {len(productos)} productos...")
+    # 1. Process clients
+    for i, cliente in enumerate(clientes):
+        insert_clientes_stg(cliente)
+        if (i + 1) % 50 == 0 or i == len(clientes) - 1:
+            print(
+                f"\r    mysql: {i + 1}/{len(clientes)} clients...",
+                end="",
+                flush=True,
+            )
+
+    # 2. Process products and create mapping table
     productos_dict = {}  # {producto_id: codigo_alt}
-    for producto in productos:
+    for i, producto in enumerate(productos):
         insert_map_producto(producto, sku_mapping)
         productos_dict[producto.id] = producto.codigo_alt
+        if (i + 1) % 50 == 0 or i == len(productos) - 1:
+            print(
+                f"\r    mysql: {len(clientes)} clients | {i + 1}/{len(productos)} products...",
+                end="",
+                flush=True,
+            )
 
-    # 2. Procesar clientes
-    print(f"[MySQL Transform] Procesando {len(clientes)} clientes...")
-    for cliente in clientes:
-        insert_clientes_stg(cliente)
-
-    # 3. Procesar órdenes y detalles
-    # Crear diccionario de órdenes para acceso rápido
-    print(f"[MySQL Transform] Procesando {len(ordenes)} órdenes...")
+    # 3. Process orders and details
     ordenes_dict = {orden.id: orden for orden in ordenes}
 
-    # Procesar cada detalle de orden
-    print(f"[MySQL Transform] Procesando {len(orden_detalles)} detalles de órdenes...")
     items_procesados = 0
     errores = 0
     for detalle in orden_detalles:
@@ -489,24 +496,20 @@ def transform_mysql(clientes, productos, ordenes, orden_detalles):
             try:
                 insert_orden_items_stg(orden, detalle, productos_dict)
                 items_procesados += 1
-            except Exception as e:
+            except Exception:
                 errores += 1
-                if errores <= 5:  # Solo mostrar los primeros 5 errores
-                    print(f"\n⚠️  Error procesando detalle {detalle.id}: {e}")
 
-            # Mostrar progreso cada 100 items
-            if items_procesados % 100 == 0:
+            if (items_procesados + errores) % 100 == 0 or (
+                items_procesados + errores
+            ) == total_items:
                 print(
-                    f"\r  Procesados: {items_procesados}/{len(orden_detalles)} items...",
+                    f"\r    mysql: {len(clientes)} clients | {len(productos)} products | {items_procesados}/{total_items} items...",
                     end="",
                     flush=True,
                 )
 
-    # Nueva línea al finalizar
-    print()
-    print(f"[MySQL Transform] Transformación completada:")
-    print(f"  - Productos mapeados: {len(productos)}")
-    print(f"  - Clientes procesados: {len(clientes)}")
-    print(f"  - Items de órdenes procesados: {items_procesados}")
+    # Final line
+    output = f"\r    mysql: {len(clientes)} clients | {len(productos)} products | {items_procesados} items"
     if errores > 0:
-        print(f"  - Errores: {errores}")
+        output += f" | {errores} errors"
+    print(output + " " * 20)  # Extra spaces to clear progress indicators

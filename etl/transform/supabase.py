@@ -1,7 +1,6 @@
 import pandas as pd
 import pycountry
 
-from bson import ObjectId
 from sqlalchemy import text
 from configs.connections import get_dw_engine, get_supabase_client
 from datetime import datetime
@@ -58,7 +57,7 @@ query_select_map_producto_sku = """
     FROM stg.map_producto;
 """
 
-# Para obtener sku de producto que coincida por nombre y categoria 
+# Para obtener sku de producto que coincida por nombre y categoria
 query_select_map_producto_sku_exist = """
     SELECT TOP 1
         sku_oficial AS SKU
@@ -140,6 +139,7 @@ query_insert_clientes_stg = """
             Funciones de preparacion de datos para staging de Supabase
     ----------------------------------------------------------------------- """
 
+
 def find_sku():
     engine = get_dw_engine()
     result = pd.read_sql(query_select_map_producto_sku, engine)
@@ -160,9 +160,9 @@ def find_sku():
     # SKU0001  -> número empieza en 3
     # SKU-0001 -> número empieza en 4
     if sku.startswith("SKU-"):
-        parte_numerica = sku[4:]   # Desde después del guion
+        parte_numerica = sku[4:]  # Desde después del guion
     else:
-        parte_numerica = sku[3:]   # Desde después de "SKU"
+        parte_numerica = sku[3:]  # Desde después de "SKU"
 
     try:
         numero = int(parte_numerica)
@@ -175,10 +175,13 @@ def find_sku():
 
     return nuevo_sku
 
+
 """
 Busca un SKU existente en stg.map_producto que coincida por nombre_norm y categoria_norm.
 Devuelve el sku_oficial si existe; de lo contrario, devuelve string vacío "".
 """
+
+
 def obtener_sku_existente(nombre_norm, categoria_norm):
     try:
         engine = get_dw_engine()
@@ -186,10 +189,7 @@ def obtener_sku_existente(nombre_norm, categoria_norm):
         result = pd.read_sql(
             query_select_map_producto_sku_exist,
             engine,
-            params={
-                "nombre_norm": nombre_norm,
-                "categoria_norm": categoria_norm
-            }
+            params={"nombre_norm": nombre_norm, "categoria_norm": categoria_norm},
         )
 
         if result.empty:
@@ -200,7 +200,8 @@ def obtener_sku_existente(nombre_norm, categoria_norm):
 
     except Exception:
         return ""  # fallback seguro
-    
+
+
 def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
     """
     Valida si un SKU existe en stg.map_producto y si coinciden Nombre y Categoria.
@@ -209,7 +210,6 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
 
     # Si sku viene vacío o None → inmediatamente False
     if not sku:
-        print("⚠️  SKU vacío o None recibido")
         return False
 
     try:
@@ -222,11 +222,7 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
         """)
 
         # Ejecutar con pandas
-        result = pd.read_sql(
-            query,
-            con=engine,
-            params={"sku": sku}
-        )
+        result = pd.read_sql(query, con=engine, params={"sku": sku})
 
         # Si no hay coincidencias
         if result.empty:
@@ -235,12 +231,15 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
         db_nombre = result.iloc[0]["nombre_norm"] or ""
         db_categoria = result.iloc[0]["categoria_norm"] or ""
 
-        # Comparación exacta (puedo hacerla insensible a mayúsculas si quieres)
-        return (db_nombre.lower() == nombre.lower()) and (db_categoria.lower() == categoria.lower())
+        # Case-sensitive comparison
+        return (db_nombre.lower() == nombre.lower()) and (
+            db_categoria.lower() == categoria.lower()
+        )
 
     except Exception as e:
         print(f"Error validando SKU en stg_map_producto: {e}")
         return False
+
 
 def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
     # SKU puede estar vacío, obtener uno existente si es así
@@ -248,10 +247,12 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
     if not sku_nueva:
         es_servicio = True
         sku_nueva = ""
-        codigo_original = ""
+    # Ensure source_code is never empty (must match source_code_prod in orden_items)
+    if not codigo_original:
+        codigo_original = "Sin código"
 
     with engine.connect() as conn:
-        result = conn.execute(
+        conn.execute(
             text(query_insert_map_producto),
             {
                 "source_system": "supabase",
@@ -259,107 +260,12 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
                 "sku_oficial": sku_nueva,
                 "nombre_norm": nombre,
                 "categoria_norm": categoria,
-                "es_servicio": es_servicio,  
+                "es_servicio": es_servicio,
             },
         )
 
         conn.commit()
 
-def insert_orden_items_stg(orden_completa):
-    total_items = len(orden_completa)
-    procesados = 0
-    errores = 0
-
-    for i in orden_completa:
-        procesados += 1
-
-        # Mostrar progreso cada 100 items
-        if procesados % 100 == 0 or procesados == total_items:
-            print(
-                f"\r  Procesados: {procesados}/{total_items} items (errores: {errores})...",
-                end="",
-                flush=True,
-            )
-        # Validar y convertir fecha
-        fecha_raw = i.get("fecha")
-        if fecha_raw:
-            try:
-                fecha_dt = datetime.fromisoformat(fecha_raw).date()
-            except Exception:
-                errores += 1
-                continue
-        else:
-            errores += 1
-            continue
-
-        # Validar cantidad
-        try:
-            cantidad_num = float(i.get("cantidad", 0))
-            if cantidad_num <= 0:
-                errores += 1
-                continue
-        except (ValueError, TypeError):
-            errores += 1
-            continue
-
-        # Validar precio unitario y total
-        try:
-            precio_unit_num = float(i.get("precio_unitario", 0))
-            total_num = float(i.get("total", 0))
-        except (ValueError, TypeError):
-            errores += 1
-            continue
-
-        # Mapeo de ProductoID para obtener sku
-        producto_id = i.get("producto_id")
-        if not producto_id:
-            errores += 1
-            continue
-
-        try:
-            response = (
-                supabase.table("producto")
-                .select("sku")
-                .eq("producto_id", producto_id)
-                .limit(1)
-                .execute()
-            )
-
-            # Si response.data es None, vacío o no contiene "sku", devolver ""
-            sku = response.data[0].get("sku", "") if response.data else ""
-
-        except Exception as e:
-            sku = ""   # Si ocurre cualquier error, dejar sku vacío
-            errores += 1
-            continue
-
-        with engine.connect() as conn:
-            conn.execute(
-                text(query_insert_orden_item_stg),
-                {
-                    "source_system": "supabase",
-                    "source_key_orden": i.get("orden_id"),
-                    "source_key_item": i.get("producto_id"),
-                    "source_code_prod": sku or "Sin código",
-                    "cliente_key": i.get("cliente_id"),
-                    "fecha_raw": i.get("fecha"),
-                    "canal_raw": i.get("canal"),
-                    "moneda": i.get("moneda"),
-                    "cantidad_raw": i.get("cantidad"),
-                    "precio_unit_raw": i.get("precio_unitario"),
-                    "total_raw": i.get("total"),
-                    "fecha_dt": fecha_dt,
-                    "cantidad_num": cantidad_num,
-                    "precio_unit_num": precio_unit_num,
-                    "total_num": total_num,
-                },
-            )
-            conn.commit()
-
-    # Nueva línea al finalizar
-    print()
-    if errores > 0:
-        print(f"⚠️  Items procesados con {errores} errores saltados")
 
 def pais_a_codigo(pais_nombre):
     """
@@ -379,53 +285,239 @@ def pais_a_codigo(pais_nombre):
             if pais_nombre.lower() in c.name.lower():
                 return c.alpha_2
 
-    except:
+    except Exception:  # noqa: BLE001
         pass
 
     return ""
 
-def insert_clientes_stg(clientes):
+
+def convertir_sku(sku: str) -> str:
+    """
+    Convierte SKU de formato 'SKU-0000' a 'SKU0000'.
+    Si no contiene guion, lo devuelve igual.
+    """
+    if "-" in sku:
+        return sku.replace("-", "")
+    return sku
+
+
+""" -----------------------------------------------------------------------
+            Función principal de transformación de datos de Supabase
+    ----------------------------------------------------------------------- """
+
+
+def transform_supabase(clientes, productos, ordenes, orden_detalles):
+    """
+    Transforma y carga datos de Supabase a staging.
+
+    Args:
+        clientes: Lista de clientes extraídos
+        productos: Lista de productos extraídos
+        ordenes: Lista de órdenes extraídas
+        orden_detalles: Lista de detalles de órdenes extraídos
+    """
+    total_productos = len(productos)
+
+    # 1. Load clients to staging
+    clientes_procesados, clientes_errores = insert_clientes_stg_with_progress(
+        clientes, 0, 0
+    )
+
+    # 2. Transform and load products to mapping table
+    # Also build productos_dict for efficient lookup
+    productos_dict = {}
+    productos_procesados = 0
+    productos_errores = 0
+    for producto in productos:
+        try:
+            codigo_original = producto.get("sku")
+            producto_id = producto.get("producto_id")
+
+            # Store in dict for later lookup
+            productos_dict[producto_id] = codigo_original or ""
+
+            if codigo_original:
+                es_sku_oficial = validar_producto_en_stg(
+                    codigo_original,
+                    producto.get("nombre"),
+                    producto.get("categoria"),
+                )
+                if es_sku_oficial:
+                    sku_nueva = convertir_sku(codigo_original)
+                else:
+                    sku_existente = obtener_sku_existente(
+                        producto.get("nombre"), producto.get("categoria")
+                    )
+                    if sku_existente:
+                        sku_nueva = sku_existente
+                    else:
+                        sku_nueva = find_sku()
+            else:
+                sku_nueva = ""
+            nombre = producto.get("nombre")
+            categoria = producto.get("categoria")
+
+            insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
+            productos_procesados += 1
+        except Exception:
+            productos_errores += 1
+            continue
+
+        if (productos_procesados + productos_errores) % 50 == 0 or (
+            productos_procesados + productos_errores
+        ) == total_productos:
+            print(
+                f"\r    supab: {clientes_procesados} clients | {productos_procesados}/{total_productos} products...",
+                end="",
+                flush=True,
+            )
+
+    # 3. Build ordenes_dict for efficient lookup (join orders with details)
+    ordenes_dict = {orden.get("orden_id"): orden for orden in ordenes}
+
+    # 4. Load order items to staging
+    items_procesados, items_errores = insert_orden_items_stg_with_progress(
+        orden_detalles,
+        ordenes_dict,
+        productos_dict,
+        clientes_procesados,
+        productos_procesados,
+    )
+
+    # Final line
+    output = f"\r    supab: {clientes_procesados} clients | {productos_procesados} products | {items_procesados} items"
+    total_errores = productos_errores + items_errores + clientes_errores
+    if total_errores > 0:
+        output += f" | {total_errores} errors"
+    print(output + " " * 20)  # Extra spaces to clear progress indicators
+
+
+def insert_orden_items_stg_with_progress(
+    orden_detalles, ordenes_dict, productos_dict, clientes_count, productos_count
+):
+    """Insert order items with progress display.
+
+    Args:
+        orden_detalles: List of order detail records
+        ordenes_dict: Dict mapping orden_id to orden record
+        productos_dict: Dict mapping producto_id to sku
+        clientes_count: Number of processed clients (for progress display)
+        productos_count: Number of processed products (for progress display)
+    """
+    total_items = len(orden_detalles)
+    procesados = 0
+    errores = 0
+
+    for detalle in orden_detalles:
+        # Get the order for this detail
+        orden_id = detalle.get("orden_id")
+        orden = ordenes_dict.get(orden_id)
+        if not orden:
+            errores += 1
+            continue
+
+        # Validar y convertir fecha
+        fecha_raw = orden.get("fecha")
+        if fecha_raw:
+            try:
+                fecha_dt = datetime.fromisoformat(fecha_raw).date()
+            except Exception:
+                errores += 1
+                continue
+        else:
+            errores += 1
+            continue
+
+        # Validar cantidad
+        try:
+            cantidad_num = float(detalle.get("cantidad", 0))
+            if cantidad_num <= 0:
+                errores += 1
+                continue
+        except (ValueError, TypeError):
+            errores += 1
+            continue
+
+        # Validar precio unitario
+        try:
+            precio_unit_num = float(detalle.get("precio_unit", 0))
+        except (ValueError, TypeError):
+            errores += 1
+            continue
+
+        # Get total from order
+        try:
+            total_num = float(orden.get("total", 0))
+        except (ValueError, TypeError):
+            total_num = 0.0
+
+        # Get SKU from productos_dict (no need for extra API call)
+        producto_id = detalle.get("producto_id")
+        if not producto_id:
+            errores += 1
+            continue
+        sku = productos_dict.get(producto_id, "")
+
+        with engine.connect() as conn:
+            conn.execute(
+                text(query_insert_orden_item_stg),
+                {
+                    "source_system": "supabase",
+                    "source_key_orden": str(orden_id),
+                    "source_key_item": str(detalle.get("orden_detalle_id")),
+                    "source_code_prod": sku or "Sin código",
+                    "cliente_key": str(orden.get("cliente_id")),
+                    "fecha_raw": str(fecha_raw),
+                    "canal_raw": orden.get("canal"),
+                    "moneda": orden.get("moneda"),
+                    "cantidad_raw": str(detalle.get("cantidad")),
+                    "precio_unit_raw": str(detalle.get("precio_unit")),
+                    "total_raw": str(orden.get("total")),
+                    "fecha_dt": fecha_dt,
+                    "cantidad_num": cantidad_num,
+                    "precio_unit_num": precio_unit_num,
+                    "total_num": total_num,
+                },
+            )
+            conn.commit()
+
+        procesados += 1
+        if (procesados + errores) % 100 == 0 or (procesados + errores) == total_items:
+            print(
+                f"\r    supab: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
+                end="",
+                flush=True,
+            )
+
+    return procesados, errores
+
+
+def insert_clientes_stg_with_progress(clientes, productos_count, items_count):
+    """Insert clients with progress display."""
     total_clientes = len(clientes)
     procesados = 0
     errores = 0
 
     for cliente in clientes:
-        procesados += 1
-
-        # Mostrar progreso cada 50 clientes
-        if procesados % 50 == 0 or procesados == total_clientes:
-            print(
-                f"\r  Procesados: {procesados}/{total_clientes} clientes (errores: {errores})...",
-                end="",
-                flush=True,
-            )
-        source_code = str(cliente.get("cliente_id"))  # ObjectId → string
+        source_code = str(cliente.get("cliente_id"))
 
         # Validar y convertir fecha de creación
         fecha_creado_raw = cliente.get("fecha_registro")
         if fecha_creado_raw:
             try:
-                # Si viene string ISO desde Supabase: "2025-10-31" o "2025-10-31T13:20:00"
                 if isinstance(fecha_creado_raw, str):
                     fecha_creado_dt = datetime.fromisoformat(fecha_creado_raw).date()
                     fecha_creado_raw_str = fecha_creado_raw
-
-                # Si por alguna razón viniera como datetime
                 elif hasattr(fecha_creado_raw, "date"):
                     fecha_creado_dt = fecha_creado_raw.date()
                     fecha_creado_raw_str = str(fecha_creado_raw)
-
                 else:
-                    # Cualquier otro formato no esperado → error
                     fecha_creado_dt = None
                     fecha_creado_raw_str = "1900-01-01"
-
             except Exception:
-                # Si la conversión falla
                 fecha_creado_dt = None
                 fecha_creado_raw_str = "1900-01-01"
         else:
-            # Si no hay fecha, usar fecha por defecto
             fecha_creado_dt = None
             fecha_creado_raw_str = "1900-01-01"
 
@@ -443,7 +535,7 @@ def insert_clientes_stg(clientes):
         # Transformar nombre pais
         pais_nombre = cliente.get("pais")
         pais_codigo = pais_a_codigo(pais_nombre)
-        if (pais_codigo != ""):
+        if pais_codigo != "":
             pais = pais_codigo
         else:
             pais = pais_nombre
@@ -465,79 +557,16 @@ def insert_clientes_stg(clientes):
                     },
                 )
                 conn.commit()
-        except Exception as e:
+            procesados += 1
+        except Exception:
             errores += 1
             continue
 
-    # Nueva línea al finalizar
-    print()
-    if errores > 0:
-        print(f"⚠️  Clientes procesados con {errores} errores saltados")
+        if (procesados + errores) % 50 == 0 or (procesados + errores) == total_clientes:
+            print(
+                f"\r    supab: {procesados}/{total_clientes} clients...",
+                end="",
+                flush=True,
+            )
 
-def convertir_sku(sku: str) -> str:
-    """
-    Convierte SKU de formato 'SKU-0000' a 'SKU0000'.
-    Si no contiene guion, lo devuelve igual.
-    """
-    if "-" in sku:
-        return sku.replace("-", "")
-    return sku
-
-""" -----------------------------------------------------------------------
-            Función principal de transformación de datos de Supabase
-    ----------------------------------------------------------------------- """
-
-def transform_supabase(productos, clientes, ordenes):
-    """
-    Transforma y carga datos de Supabase a staging.
-    """
-    try:
-        print("[Supabase Transform] Iniciando transformación...")
-
-        # 1. Transformar y cargar productos al mapa
-        print(f"[Supabase Transform] Procesando {len(productos)} productos...")
-        productos_procesados = 0
-        for producto in productos:
-            try:
-                codigo_original = producto.get("sku")
-                if codigo_original:
-                    es_sku_oficial = validar_producto_en_stg(codigo_original, producto.get("nombre"), producto.get("categoria"))
-                    if es_sku_oficial:
-                        sku_nueva = convertir_sku(codigo_original)
-                    else:
-                        sku_existente = obtener_sku_existente(producto.get("nombre"), producto.get("categoria"))
-                        if sku_existente:
-                            sku_nueva = sku_existente
-                        else:
-                            sku_nueva = find_sku()
-                else:
-                    sku_nueva = ""
-                nombre = producto.get("nombre")
-                categoria = producto.get("categoria")
-
-                insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
-                productos_procesados += 1
-            except Exception as e:
-                print(f"⚠️  Error procesando producto {producto.get('_id')}: {e}")
-                continue
-
-        print(
-            f"[Supabase Transform] Productos mapeados: {productos_procesados}/{len(productos)}"
-        )
-
-        # 2. Cargar items a staging
-        print(f"[Supabase Transform] Cargando {len(ordenes)} items a staging...")
-        insert_orden_items_stg(ordenes)
-
-        # 3. Cargar clientes a staging
-        print(f"[Supabase Transform] Procesando {len(clientes)} clientes...")
-        insert_clientes_stg(clientes)
-
-        print("[Supabase Transform] Transformación completada exitosamente")
-
-    except Exception as e:
-        print(f"❌ Error crítico en transform_supabase: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise
+    return procesados, errores

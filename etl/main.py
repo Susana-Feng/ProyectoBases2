@@ -1,250 +1,344 @@
+import argparse
 import signal
 import sys
+import warnings
 
-from extract.mongo import extract_mongo
 from extract.mssql import extract_mssql
 from extract.mysql import extract_mysql
 from extract.supabase import extract_supabase
+from extract.mongo import extract_mongo
 from extract.neo4j import extract_neo4j
-from load.general import load_datawarehouse
-from transform.mongo import transform_mongo
 from transform.mssql import transform_mssql
 from transform.mysql import transform_mysql
 from transform.supabase import transform_supabase
+from transform.mongo import transform_mongo
 from transform.neo4j import transform_Neo4j
-from association_rules.load_rules import carga_reglas_asociacion
+from load.general import load_datawarehouse
 
-# Variable global para controlar interrupciones
+# Suppress SQLAlchemy SAWarning about unrecognized SQL Server versions
+warnings.filterwarnings("ignore", message=".*Unrecognized server version info.*")
+
+SUPPORTED_DBS = {"mssql", "mysql", "supabase", "mongo", "neo4j"}
+DEFAULT_DBS = ["mssql", "mysql", "supabase", "mongo", "neo4j"]
+
+# Global variable to control interruptions
 interrupted = False
 
 
 def signal_handler(sig, frame):
-    """Maneja Ctrl+C de forma elegante"""
+    """Handle Ctrl+C gracefully - just set the flag, don't exit immediately"""
     global interrupted
-    print("\n\n⚠️  Interrupción detectada (Ctrl+C). Finalizando proceso ETL...")
+    if interrupted:
+        # Second Ctrl+C - force exit
+        print("\n\nForce quit (second Ctrl+C)")
+        sys.exit(1)
+    print("\n\nInterrupted (Ctrl+C). Finishing current operation...")
     interrupted = True
-    sys.exit(0)
+
+
+class InterruptedError(Exception):
+    """Custom exception for clean interruption"""
+
+    pass
 
 
 def check_interrupt():
-    """Verifica si se solicitó interrumpir el proceso"""
+    """Check if interruption was requested and raise exception if so"""
     if interrupted:
-        print("⚠️  Proceso interrumpido por el usuario")
-        sys.exit(0)
+        raise InterruptedError("Process interrupted by user")
 
 
 def verificar_tipos_cambio():
-    """
-    Verifica si hay tipos de cambio cargados y si no, carga el histórico.
-    """
+    """Check if exchange rates are loaded, warn if not."""
     from sqlalchemy import text
     from configs.connections import get_dw_engine
-    
+
     try:
         engine = get_dw_engine()
         with engine.connect() as conn:
             result = conn.execute(text("SELECT COUNT(*) FROM stg.tipo_cambio"))
             count = result.fetchone()[0]
-            
+
             if count == 0:
-                print("\n⚠️  No hay tipos de cambio cargados.")
-                print("   Ejecuta el job SQL Server 'BCCR_TipoCambio_Diario' o corre:")
-                print("   EXEC DW_SALES.jobs.sp_BCCR_CargarTiposCambio @FechaInicio='2010-01-01', @FechaFinal=GETDATE();")
+                print("    WARNING: No exchange rates loaded")
+                print("    Run: EXEC DW_SALES.jobs.sp_BCCR_CargarTiposCambio")
+                return 0
             else:
-                print(f"\n✓ Tipos de cambio ya cargados: {count} registros")
+                return count
     except Exception as e:
-        print(f"⚠️  No se pudo verificar tipos de cambio: {e}")
-        print("   Verifica la instancia de SQL Server antes de continuar...")
+        print(f"    Could not verify exchange rates: {e}")
+        return -1
+
+
+def parse_db_filters(raw_filters):
+    if not raw_filters:
+        return list(DEFAULT_DBS)
+
+    selected = set()
+    for chunk in raw_filters:
+        for value in chunk.split(","):
+            db = value.strip().lower()
+            if not db:
+                continue
+            if db == "all":
+                return sorted(SUPPORTED_DBS)
+            if db not in SUPPORTED_DBS:
+                raise ValueError(
+                    f"Unknown source '{db}'. Valid options: {', '.join(sorted(SUPPORTED_DBS))}"
+                )
+            selected.add(db)
+
+    return sorted(selected) if selected else list(DEFAULT_DBS)
+
+
+def build_arg_parser():
+    parser = argparse.ArgumentParser(
+        description="ETL process for the sales Data Warehouse"
+    )
+    parser.add_argument(
+        "--db",
+        "-d",
+        action="append",
+        help=(
+            "Data sources to process (can repeat or use commas). "
+            "Example: --db mssql --db mysql,supabase. Use 'all' for all sources."
+        ),
+    )
+    return parser
 
 
 if __name__ == "__main__":
-    # Configurar manejo de señales
+    arg_parser = build_arg_parser()
+    try:
+        cli_args = arg_parser.parse_args()
+        selected_dbs = parse_db_filters(cli_args.db)
+    except ValueError as parse_err:
+        print(f"Error: {parse_err}")
+        sys.exit(1)
+
+    # Configure signal handling
     signal.signal(signal.SIGINT, signal_handler)
 
-    print("=" * 60)
-    print("INICIANDO PROCESO ETL")
-    print("=" * 60)
+    print(f"\nETL - Sources: {', '.join(selected_dbs)}")
 
     try:
-        # ========== TIPOS DE CAMBIO ==========
-        print("\n[0] VERIFICACIÓN DE TIPOS DE CAMBIO")
-        print("-" * 60)
-        verificar_tipos_cambio()
+        # ========== EXCHANGE RATES ==========
+        print("\n[1] Exchange rates")
+        count = verificar_tipos_cambio()
+        if count > 0:
+            print(f"    {count} records OK")
         check_interrupt()
 
-        # ========== EXTRACCIÓN ==========
-        print("\n[1] EXTRACCIÓN DE DATOS")
-        print("-" * 60)
+        objetos_mssql = None
+        objetos_mysql = None
+        objetos_supabase = None
+        objetos_mongo = None
+        objetos_neo4j = None
 
-        # # Extraer datos de MongoDB
-        # print("\n[MongoDB] Extrayendo datos...")
-        # try:
-        #     objetos_mongo = extract_mongo()
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error extrayendo de MongoDB: {e}")
-        #     import traceback
+        # ========== EXTRACTION ==========
+        print("\n[2] Extraction")
 
-        #     traceback.print_exc()
-        #     sys.exit(1)
+        if "mssql" in selected_dbs:
+            try:
+                objetos_mssql = extract_mssql()
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("MSSQL extraction interrupted")
+                print(f"    Error extracting from MSSQL: {e}")
+                import traceback
 
-        # Extraer datos de MS SQL Server
-        print("\n[MS SQL Server] Extrayendo datos...")
-        try:
-            objetos_mssql = extract_mssql()
-            check_interrupt()
-        except Exception as e:
-            print(f"❌ Error extrayendo de MS SQL Server: {e}")
-            import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-            traceback.print_exc()
-            sys.exit(1)
+        if "mysql" in selected_dbs:
+            try:
+                objetos_mysql = extract_mysql()
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("MySQL extraction interrupted")
+                print(f"    Error extracting from MySQL: {e}")
+                import traceback
 
-        # Extraer datos de MySQL
-        print("\n[MySQL] Extrayendo datos...")
-        try:
-            objetos_mysql = extract_mysql()
-            check_interrupt()
-        except Exception as e:
-            print(f"❌ Error extrayendo de MySQL: {e}")
-            import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-            traceback.print_exc()
-            sys.exit(1)
+        if "supabase" in selected_dbs:
+            try:
+                objetos_supabase = extract_supabase()
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("Supabase extraction interrupted")
+                print(f"    Error extracting from Supabase: {e}")
+                import traceback
 
-        # Extraer datos de Supabase
-        print("\n[Supabase] Extrayendo datos...")
-        try:
-            objetos_supabase = extract_supabase()
-            check_interrupt()
-        except Exception as e:
-            print(f"❌ Error extrayendo de Supabase: {e}")
-            import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-            traceback.print_exc()
-            sys.exit(1)
+        if "mongo" in selected_dbs:
+            try:
+                objetos_mongo = extract_mongo()
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("MongoDB extraction interrupted")
+                print(f"    Error extracting from MongoDB: {e}")
+                import traceback
 
-        # Extraer datos de Neo4j
-        # print("\n[Neo4j] Extrayendo datos...")
-        # try:
-        #     objetos_neo4j = extract_neo4j()
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error extrayendo de Supabase: {e}")
-        #     import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-        #     traceback.print_exc()
-        #     sys.exit(1)
+        if "neo4j" in selected_dbs:
+            try:
+                objetos_neo4j = extract_neo4j()
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("Neo4j extraction interrupted")
+                print(f"    Error extracting from Neo4j: {e}")
+                import traceback
 
-        # ========== TRANSFORMACIÓN ==========
-        # print("\n[2] TRANSFORMACIÓN DE DATOS")
-        # print("-" * 60)
+                traceback.print_exc()
+                sys.exit(1)
 
-        # # Transformar datos de MongoDB
-        # print("\n[MongoDB] Transformando datos...")
-        # try:
-        #     transform_mongo(objetos_mongo[0], objetos_mongo[1], objetos_mongo[2])
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error transformando datos de MongoDB: {e}")
-        #     import traceback
+        # ========== TRANSFORMATION ==========
+        print("\n[3] Transformation")
 
-        #     traceback.print_exc()
-        #     sys.exit(1)
+        if "mssql" in selected_dbs and objetos_mssql:
+            try:
+                transform_mssql(
+                    objetos_mssql[0],
+                    objetos_mssql[1],
+                    objetos_mssql[2],
+                    objetos_mssql[3],
+                )
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("MSSQL transformation interrupted")
+                print(f"    Error transforming MSSQL data: {e}")
+                import traceback
 
-        # Transformar datos de MS SQL Server
-        print("\n[MS SQL Server] Transformando datos...")
-        try:
-            transform_mssql(
-                objetos_mssql[0], objetos_mssql[1], objetos_mssql[2], objetos_mssql[3]
-            )
-            check_interrupt()
-        except Exception as e:
-            print(f"❌ Error transformando datos de MS SQL Server: {e}")
-            import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-            traceback.print_exc()
-            sys.exit(1)
+        if "mysql" in selected_dbs and objetos_mysql:
+            try:
+                transform_mysql(
+                    objetos_mysql[0],
+                    objetos_mysql[1],
+                    objetos_mysql[2],
+                    objetos_mysql[3],
+                )
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("MySQL transformation interrupted")
+                print(f"    Error transforming MySQL data: {e}")
+                import traceback
 
-        # Transformar datos de MySQL
-        print("\n[MySQL] Transformando datos...")
-        try:
-            transform_mysql(
-                objetos_mysql[0], objetos_mysql[1], objetos_mysql[2], objetos_mysql[3]
-            )
-            check_interrupt()
-        except Exception as e:
-            print(f"❌ Error transformando datos de MySQL: {e}")
-            import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-            traceback.print_exc()
-            sys.exit(1)
+        if "supabase" in selected_dbs and objetos_supabase:
+            try:
+                # extract_supabase returns: (clientes, productos, ordenes, orden_detalles)
+                transform_supabase(
+                    objetos_supabase[0],
+                    objetos_supabase[1],
+                    objetos_supabase[2],
+                    objetos_supabase[3],
+                )
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("Supabase transformation interrupted")
+                print(f"    Error transforming Supabase data: {e}")
+                import traceback
 
-        # # Transformar datos de Supabase
-        print("\n[Supabase] Transformando datos...")
-        try:
-            transform_supabase(objetos_supabase[2], objetos_supabase[0], objetos_supabase[1])
-            check_interrupt()
-        except Exception as e:
-            print(f"❌ Error transformando datos de Supabase: {e}")
-            import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-            traceback.print_exc()
-            sys.exit(1)
+        if "mongo" in selected_dbs and objetos_mongo:
+            try:
+                # extract_mongo returns: (productos, clientes, ordenes)
+                transform_mongo(objetos_mongo[0], objetos_mongo[1], objetos_mongo[2])
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("MongoDB transformation interrupted")
+                print(f"    Error transforming MongoDB data: {e}")
+                import traceback
 
-        # Transformar datos de Supabase
-        print("\n[Neo4j] Transformando datos...")
-        # try:
-        #     #print(objetos_neo4j["nodes"].get("Producto"))
-        #     transform_Neo4j(objetos_neo4j["nodes"].get("Producto"), objetos_neo4j["nodes"].get("Cliente"), objetos_neo4j["relationships"].get("REALIZO"), objetos_neo4j["relationships"].get("CONTIENE"))
-        #     check_interrupt()
-        # except Exception as e:
-        #     print(f"❌ Error transformando datos de Neo4j: {e}")
-        #     import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-        #     traceback.print_exc()
-        #     sys.exit(1)
+        if "neo4j" in selected_dbs and objetos_neo4j:
+            try:
+                # extract_neo4j returns: {"nodes": {...}, "relationships": {...}}
+                nodes = objetos_neo4j["nodes"]
+                rels = objetos_neo4j["relationships"]
+                transform_Neo4j(
+                    nodes.get("Producto", []),
+                    nodes.get("Cliente", []),
+                    rels.get("REALIZO", []),
+                    rels.get("CONTIENE", []),
+                )
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("Neo4j transformation interrupted")
+                print(f"    Error transforming Neo4j data: {e}")
+                import traceback
 
-        # # ========== CARGA ==========
-        print("\n[3] CARGA AL DATA WAREHOUSE")
-        print("-" * 60)
-        try:
-            load_datawarehouse()
-            check_interrupt()
-        except Exception as e:
-            print(f"❌ Error cargando al Data Warehouse: {e}")
-            import traceback
+                traceback.print_exc()
+                sys.exit(1)
 
-            traceback.print_exc()
-            sys.exit(1)
+        # ========== LOAD ==========
+        print("\n[4] Load to Data Warehouse")
+        load_datawarehouse()
 
-        print("\n" + "=" * 60)
-        print("✅ PROCESO ETL COMPLETADO EXITOSAMENTE")
-        print("=" * 60)
+        print("\nETL completed successfully\n")
 
-        # ========== REGLAS DE ASOCIACIÓN ==========
-        carga_reglas_asociacion()
-
-
-
-        # Nota: Los tipos de cambio se aplican mediante los jobs de SQL Server
-        # Usa DW_SALES.jobs.sp_BCCR_CargarTiposCambio para reconstruir históricos
-
+    except InterruptedError:
+        print("\nProcess stopped cleanly by user")
+        sys.exit(0)
     except KeyboardInterrupt:
-        print("\n\n⚠️  Proceso interrumpido por el usuario (Ctrl+C)")
+        print("\n\nProcess interrupted by user (Ctrl+C)")
         sys.exit(0)
     except Exception as e:
-        print(f"\n\n❌ Error inesperado en el proceso ETL: {e}")
+        print(f"\n\nUnexpected error in ETL process: {e}")
         import traceback
 
         traceback.print_exc()
         sys.exit(1)
 
 
-# Función para resetear el DataWarehouse (eliminar datos cargados de prueba)
+# Function to reset the DataWarehouse (delete test data)
 def reset_datawarehouse():
     from sqlalchemy import text
-
     from configs.connections import get_dw_engine
 
     engine = get_dw_engine()
@@ -263,5 +357,5 @@ def reset_datawarehouse():
         conn.execute(text(sql))
 
 
-# Descomentar la siguiente línea para resetear el DataWarehouse
-#reset_datawarehouse()
+# Uncomment the following line to reset the DataWarehouse
+# reset_datawarehouse()
