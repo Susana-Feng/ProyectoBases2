@@ -618,76 +618,130 @@ def generate_orders_mssql(num_orders: int, clientes: List[Dict[str, Any]], produ
 
 
 def write_mysql_sql(clientes, productos, orders, details, path: Path) -> None:
+    """Generate optimized MySQL SQL using multi-row INSERTs."""
+    BATCH_SIZE = 500  # MySQL handles up to 1000 rows per INSERT
+    
     lines: List[str] = [
         "SET NAMES utf8mb4;",
         "SET CHARACTER SET utf8mb4;",
         "SET character_set_connection=utf8mb4;",
         "",
         "USE DB_SALES;",
+        "",
+        "-- Disable checks for faster inserts",
+        "SET FOREIGN_KEY_CHECKS = 0;",
+        "SET UNIQUE_CHECKS = 0;",
+        "SET AUTOCOMMIT = 0;",
         ""
     ]
-    for c in clientes:
-        nombre = c["nombre"].replace("'", "''")
-        correo = c["correo"].replace("'", "''")
-        pais = c["pais"].replace("'", "''")
-        lines.append(
-            f"INSERT INTO Cliente (nombre, correo, genero, pais, created_at) VALUES ('{nombre}', '{correo}', '{c['genero']}', '{pais}', '{c['created_at']}');"
-        )
+    
+    # Batch insert Clientes
+    for i in range(0, len(clientes), BATCH_SIZE):
+        batch = clientes[i:i + BATCH_SIZE]
+        values = []
+        for c in batch:
+            nombre = c["nombre"].replace("'", "''")
+            correo = c["correo"].replace("'", "''")
+            pais = c["pais"].replace("'", "''")
+            values.append(f"('{nombre}', '{correo}', '{c['genero']}', '{pais}', '{c['created_at']}')")
+        lines.append("INSERT INTO Cliente (nombre, correo, genero, pais, created_at) VALUES")
+        lines.append(",\n".join(values) + ";")
     lines.append("")
-    for p in productos:
-        nombre = p["nombre"].replace("'", "''")
-        categoria = p["categoria"].replace("'", "''")
-        lines.append(
-            f"INSERT INTO Producto (codigo_alt, nombre, categoria) VALUES ('{p['codigo_alt']}', '{nombre}', '{categoria}');"
-        )
+    
+    # Batch insert Productos
+    for i in range(0, len(productos), BATCH_SIZE):
+        batch = productos[i:i + BATCH_SIZE]
+        values = []
+        for p in batch:
+            nombre = p["nombre"].replace("'", "''")
+            categoria = p["categoria"].replace("'", "''")
+            values.append(f"('{p['codigo_alt']}', '{nombre}', '{categoria}')")
+        lines.append("INSERT INTO Producto (codigo_alt, nombre, categoria) VALUES")
+        lines.append(",\n".join(values) + ";")
     lines.append("")
-    for o in orders:
-        lines.append(
-            "INSERT INTO Orden (cliente_id, fecha, canal, moneda, total) "
-            f"VALUES ({o['cliente_id']}, '{o['fecha']}', '{o['canal']}', '{o['moneda']}', '{o['total']}');"
-        )
+    
+    # Batch insert Ordenes
+    for i in range(0, len(orders), BATCH_SIZE):
+        batch = orders[i:i + BATCH_SIZE]
+        values = []
+        for o in batch:
+            values.append(f"({o['cliente_id']}, '{o['fecha']}', '{o['canal']}', '{o['moneda']}', '{o['total']}')")
+        lines.append("INSERT INTO Orden (cliente_id, fecha, canal, moneda, total) VALUES")
+        lines.append(",\n".join(values) + ";")
     lines.append("")
-    for d in details:
-        precio = d["precio_unit"].replace("'", "''")
-        lines.append(
-            "INSERT INTO OrdenDetalle (orden_id, producto_id, cantidad, precio_unit) "
-            f"VALUES ({d['orden_id']}, {d['producto_id']}, {d['cantidad']}, '{precio}');"
-        )
+    
+    # Batch insert OrdenDetalle
+    for i in range(0, len(details), BATCH_SIZE):
+        batch = details[i:i + BATCH_SIZE]
+        values = []
+        for d in batch:
+            precio = d["precio_unit"].replace("'", "''")
+            values.append(f"({d['orden_id']}, {d['producto_id']}, {d['cantidad']}, '{precio}')")
+        lines.append("INSERT INTO OrdenDetalle (orden_id, producto_id, cantidad, precio_unit) VALUES")
+        lines.append(",\n".join(values) + ";")
+    
+    lines.append("")
+    lines.append("-- Re-enable checks and commit")
+    lines.append("SET FOREIGN_KEY_CHECKS = 1;")
+    lines.append("SET UNIQUE_CHECKS = 1;")
+    lines.append("COMMIT;")
+    lines.append("SET AUTOCOMMIT = 1;")
+    
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def write_mssql_sql(clientes, productos, orders, details, path: Path) -> None:
+    """Generate optimized MSSQL SQL using multi-row INSERTs."""
+    BATCH_SIZE = 500  # MSSQL supports up to 1000 rows per INSERT
+    
     lines: List[str] = ["USE DB_SALES;", "GO", ""]
-    for c in clientes:
-        nombre = c["Nombre"].replace("'", "''")
-        email = c["Email"].replace("'", "''")
-        pais = c["Pais"].replace("'", "''")
-        lines.append(
-            "INSERT INTO dbo.Cliente (Nombre, Email, Genero, Pais, FechaRegistro) "
-            f"VALUES (N'{nombre}', N'{email}', N'{c['Genero']}', N'{pais}', '{c['FechaRegistro']}');"
-        )
+    
+    # Batch insert Clientes
+    for i in range(0, len(clientes), BATCH_SIZE):
+        batch = clientes[i:i + BATCH_SIZE]
+        values = []
+        for c in batch:
+            nombre = c["Nombre"].replace("'", "''")
+            email = c["Email"].replace("'", "''")
+            pais = c["Pais"].replace("'", "''")
+            values.append(f"(N'{nombre}', N'{email}', N'{c['Genero']}', N'{pais}', '{c['FechaRegistro']}')")
+        lines.append("INSERT INTO dbo.Cliente (Nombre, Email, Genero, Pais, FechaRegistro) VALUES")
+        lines.append(",\n".join(values) + ";")
     lines.append("GO\n")
-    for p in productos:
-        nombre = p["nombre"].replace("'", "''")
-        categoria = p["categoria"].replace("'", "''")
-        lines.append(
-            "INSERT INTO dbo.Producto (SKU, Nombre, Categoria) "
-            f"VALUES (N'{p['sku']}', N'{nombre}', N'{categoria}');"
-        )
+    
+    # Batch insert Productos
+    for i in range(0, len(productos), BATCH_SIZE):
+        batch = productos[i:i + BATCH_SIZE]
+        values = []
+        for p in batch:
+            nombre = p["nombre"].replace("'", "''")
+            categoria = p["categoria"].replace("'", "''")
+            values.append(f"(N'{p['sku']}', N'{nombre}', N'{categoria}')")
+        lines.append("INSERT INTO dbo.Producto (SKU, Nombre, Categoria) VALUES")
+        lines.append(",\n".join(values) + ";")
     lines.append("GO\n")
-    for o in orders:
-        lines.append(
-            "INSERT INTO dbo.Orden (ClienteId, Fecha, Canal, Moneda, Total) "
-            f"VALUES ({o['ClienteId']}, '{o['Fecha']}', N'{o['Canal']}', '{o['Moneda']}', {o['Total']});"
-        )
+    
+    # Batch insert Ordenes
+    for i in range(0, len(orders), BATCH_SIZE):
+        batch = orders[i:i + BATCH_SIZE]
+        values = []
+        for o in batch:
+            values.append(f"({o['ClienteId']}, '{o['Fecha']}', N'{o['Canal']}', '{o['Moneda']}', {o['Total']})")
+        lines.append("INSERT INTO dbo.Orden (ClienteId, Fecha, Canal, Moneda, Total) VALUES")
+        lines.append(",\n".join(values) + ";")
     lines.append("GO\n")
-    for d in details:
-        descuento = "NULL" if d["DescuentoPct"] is None else f"{d['DescuentoPct']}"
-        lines.append(
-            "INSERT INTO dbo.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnit, DescuentoPct) "
-            f"VALUES ({d['OrdenId']}, {d['ProductoId']}, {d['Cantidad']}, {d['PrecioUnit']}, {descuento});"
-        )
+    
+    # Batch insert OrdenDetalle
+    for i in range(0, len(details), BATCH_SIZE):
+        batch = details[i:i + BATCH_SIZE]
+        values = []
+        for d in batch:
+            descuento = "NULL" if d["DescuentoPct"] is None else f"{d['DescuentoPct']}"
+            values.append(f"({d['OrdenId']}, {d['ProductoId']}, {d['Cantidad']}, {d['PrecioUnit']}, {descuento})")
+        lines.append("INSERT INTO dbo.OrdenDetalle (OrdenId, ProductoId, Cantidad, PrecioUnit, DescuentoPct) VALUES")
+        lines.append(",\n".join(values) + ";")
     lines.append("GO")
+    
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -1008,71 +1062,124 @@ def generate_orders_neo4j(num_orders: int, clientes: List[Dict[str, Any]], produ
 
 
 def write_neo4j_cypher(clientes, productos, orders, rels, path: Path) -> None:
+    """Generate optimized Cypher using UNWIND with smaller batches for better performance."""
+    BATCH_SIZE = 200  # Smaller batches to avoid parser overload
+    
+    def escape_cypher(s: str) -> str:
+        """Escape strings for Cypher - backslash first, then quotes."""
+        return s.replace("\\", "\\\\").replace("'", "\\'")
+    
+    def to_cypher_map(d: Dict[str, Any]) -> str:
+        """Convert a Python dict to Cypher map literal syntax."""
+        parts = []
+        for k, v in d.items():
+            if isinstance(v, str):
+                parts.append(f"{k}: '{escape_cypher(v)}'")
+            elif isinstance(v, (int, float)):
+                parts.append(f"{k}: {v}")
+            elif v is None:
+                parts.append(f"{k}: null")
+            else:
+                parts.append(f"{k}: '{escape_cypher(str(v))}'")
+        return "{" + ", ".join(parts) + "}"
+    
+    def to_cypher_list(items: List[Dict[str, Any]]) -> str:
+        """Convert a list of dicts to Cypher list of maps."""
+        return "[" + ", ".join(to_cypher_map(item) for item in items) + "]"
+    
     lines: List[str] = []
-    for c in clientes:
-        # En Cypher, las comillas simples se escapan con backslash: \'
-        nombre = c["nombre"].replace("\\", "\\\\").replace("'", "\\'")
-        pais = c["pais"].replace("\\", "\\\\").replace("'", "\\'")
-        lines.append(
-            "CREATE (:Cliente {id: '%s', nombre: '%s', genero: '%s', pais: '%s'});"
-            % (c["id"], nombre, c["genero"], pais)
-        )
+    
+    # Create indexes first for faster MATCH operations
+    lines.append("// Create indexes for faster lookups")
+    lines.append("CREATE INDEX cliente_id IF NOT EXISTS FOR (c:Cliente) ON (c.id);")
+    lines.append("CREATE INDEX producto_sku IF NOT EXISTS FOR (p:Producto) ON (p.sku);")
+    lines.append("CREATE INDEX orden_id IF NOT EXISTS FOR (o:Orden) ON (o.id);")
+    lines.append("CREATE INDEX categoria_nombre IF NOT EXISTS FOR (cat:Categoria) ON (cat.nombre);")
     lines.append("")
+    
+    # Batch insert Clientes using UNWIND in smaller batches
+    lines.append("// Insert Clientes in batches")
+    cliente_data = [
+        {"id": c["id"], "nombre": c["nombre"], "genero": c["genero"], "pais": c["pais"]}
+        for c in clientes
+    ]
+    for i in range(0, len(cliente_data), BATCH_SIZE):
+        batch = cliente_data[i:i + BATCH_SIZE]
+        lines.append(f"UNWIND {to_cypher_list(batch)} AS c")
+        lines.append("CREATE (:Cliente {id: c.id, nombre: c.nombre, genero: c.genero, pais: c.pais});")
+    lines.append("")
+    
+    # Batch insert Categorias (small list, no need to batch)
+    lines.append("// Insert Categorias")
     categorias = sorted(set(p["categoria"] for p in productos))
-    for i, cat in enumerate(categorias, start=1):
-        nombre = cat.replace("\\", "\\\\").replace("'", "\\'")
-        lines.append(
-            "CREATE (:Categoria {id: 'CAT-%03d', nombre: '%s'});" % (i, nombre)
-        )
+    categoria_data = [{"id": f"CAT-{i:03d}", "nombre": cat} for i, cat in enumerate(categorias, start=1)]
+    lines.append(f"UNWIND {to_cypher_list(categoria_data)} AS cat")
+    lines.append("CREATE (:Categoria {id: cat.id, nombre: cat.nombre});")
     lines.append("")
-    for p in productos:
-        nombre = p["nombre"].replace("\\", "\\\\").replace("'", "\\'")
-        categoria = p["categoria"].replace("\\", "\\\\").replace("'", "\\'")
-        lines.append(
-            "MATCH (c:Categoria {nombre: '%s'}) "
-            "CREATE (p:Producto {id: '%s', nombre: '%s', categoria: '%s', sku: '%s', codigo_alt: '%s', codigo_mongo: '%s'})-[:PERTENECE_A]->(c);"
-            % (
-                categoria,
-                p["sku"],
-                nombre,
-                categoria,
-                p["sku"],
-                p["codigo_alt"],
-                p["codigo_mongo"],
-            )
-        )
+    
+    # Batch insert Productos with relationship to Categoria
+    lines.append("// Insert Productos in batches with PERTENECE_A relationship")
+    producto_data = [
+        {
+            "id": p["sku"],
+            "nombre": p["nombre"],
+            "categoria": p["categoria"],
+            "sku": p["sku"],
+            "codigo_alt": p["codigo_alt"],
+            "codigo_mongo": p["codigo_mongo"]
+        }
+        for p in productos
+    ]
+    for i in range(0, len(producto_data), BATCH_SIZE):
+        batch = producto_data[i:i + BATCH_SIZE]
+        lines.append(f"UNWIND {to_cypher_list(batch)} AS p")
+        lines.append("MATCH (cat:Categoria {nombre: p.categoria})")
+        lines.append("CREATE (prod:Producto {id: p.id, nombre: p.nombre, categoria: p.categoria, sku: p.sku, codigo_alt: p.codigo_alt, codigo_mongo: p.codigo_mongo})-[:PERTENECE_A]->(cat);")
     lines.append("")
-    for o in orders:
-        lines.append(
-            "MATCH (c:Cliente {id: '%s'}) "
-            "CREATE (c)-[:REALIZO]->(:Orden {id: '%s', fecha: datetime('%s'), canal: '%s', moneda: '%s', total: %s});"
-            % (
-                o["cliente_id"],
-                o["id"],
-                o["fecha"].isoformat(),
-                o["canal"],
-                o["moneda"],
-                o["total"],
-            )
-        )
+    
+    # Batch insert Ordenes with REALIZO relationship
+    lines.append("// Insert Ordenes in batches with REALIZO relationship")
+    orden_data = [
+        {
+            "id": o["id"],
+            "cliente_id": o["cliente_id"],
+            "fecha": o["fecha"].isoformat(),
+            "canal": o["canal"],
+            "moneda": o["moneda"],
+            "total": o["total"]
+        }
+        for o in orders
+    ]
+    for i in range(0, len(orden_data), BATCH_SIZE):
+        batch = orden_data[i:i + BATCH_SIZE]
+        lines.append(f"UNWIND {to_cypher_list(batch)} AS o")
+        lines.append("MATCH (c:Cliente {id: o.cliente_id})")
+        lines.append("CREATE (c)-[:REALIZO]->(:Orden {id: o.id, fecha: datetime(o.fecha), canal: o.canal, moneda: o.moneda, total: o.total});")
     lines.append("")
-    for r in rels:
-        lines.append(
-            "MATCH (o:Orden {id: '%s'}), (p:Producto {sku: '%s'}) "
-            "CREATE (o)-[:CONTIENE {cantidad: %d, precio_unit: %s}]->(p);"
-            % (
-                r["orden_id"],
-                r["producto_sku"],
-                r["cantidad"],
-                r["precio_unit"],
-            )
-        )
+    
+    # Batch insert CONTIENE relationships
+    lines.append("// Insert CONTIENE relationships in batches")
+    rel_data = [
+        {
+            "orden_id": r["orden_id"],
+            "producto_sku": r["producto_sku"],
+            "cantidad": r["cantidad"],
+            "precio_unit": r["precio_unit"]
+        }
+        for r in rels
+    ]
+    for i in range(0, len(rel_data), BATCH_SIZE):
+        batch = rel_data[i:i + BATCH_SIZE]
+        lines.append(f"UNWIND {to_cypher_list(batch)} AS r")
+        lines.append("MATCH (o:Orden {id: r.orden_id}), (p:Producto {sku: r.producto_sku})")
+        lines.append("CREATE (o)-[:CONTIENE {cantidad: r.cantidad, precio_unit: r.precio_unit}]->(p);")
+    
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def main() -> None:
     num_clientes_total = 3000
-    num_productos_universo = 600
+    num_productos_universo = 500  # Total products with partial overlap between DBs
     num_ordenes_total = 25000
 
     clientes_supabase = generar_datos_clientes_supabase(num_clientes_total // 5)
