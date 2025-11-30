@@ -399,13 +399,8 @@ BEGIN
         RETURN;
     END
     
-    -- Si es fin de semana, saltar
-    IF DATEPART(WEEKDAY, @Hoy) IN (1, 7)
-    BEGIN
-        INSERT INTO jobs.BCCR_Log (JobType, Status, Message)
-        VALUES ('DIARIO', 'SKIPPED', 'Fin de semana - no hay tipo de cambio');
-        RETURN;
-    END
+    -- NOTE: El BCCR publica tipos de cambio todos los días, incluyendo fines de semana
+    -- (usa el valor del último día hábil)
     
     -- Cargar tipo de cambio de hoy
     EXEC jobs.sp_BCCR_CargarTiposCambio @Hoy, @Hoy;
@@ -447,7 +442,6 @@ BEGIN
         @TodayRateCRCUSD AS TasaHoy_CRC_USD,
         CASE 
             WHEN @TodayRateUSDCRC IS NOT NULL AND @TodayRateCRCUSD IS NOT NULL THEN 'OK'
-            WHEN DATEPART(WEEKDAY, GETDATE()) IN (1, 7) THEN 'OK - Fin de semana'
             WHEN @LastLoad >= DATEADD(DAY, -1, CAST(GETDATE() AS DATE)) THEN 'WARNING - Pendiente hoy'
             ELSE 'ERROR - Atrasado'
         END AS Estado;
