@@ -1,0 +1,30 @@
+name: supabase_remote_stack
+
+services:
+  supabase_remote_init:
+    image: postgres:16
+    container_name: supabase_sales_init
+    env_file:
+      - ../../../../.env.local
+    environment:
+      SUPABASE_DB_HOST: "${SUPABASE_DB_HOST:-aws-1-us-east-2.pooler.supabase.com}"
+      SUPABASE_DB_PORT: "${SUPABASE_DB_PORT:-5432}"
+      SUPABASE_DB_USER: "${SUPABASE_DB_USER:-postgres}"
+      SUPABASE_DB_NAME: "${SUPABASE_DB_NAME:-postgres}"
+    working_dir: /workspace/scripts/Supabase
+    volumes:
+      - ../../../../:/workspace:ro
+      - ./init:/scripts:ro
+    networks:
+      - sales_net
+    profiles:
+      - init
+    entrypoint:
+      - /bin/bash
+      - /scripts/run-init.sh
+
+networks:
+  sales_net:
+    name: sales_net
+    driver: bridge
+    external: true

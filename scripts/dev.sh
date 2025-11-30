@@ -29,13 +29,15 @@ MSSQL_REMOTE_COMPOSE="$INFRA_DB_DIR/mssql/compose.yaml"
 MSSQL_LOCAL_COMPOSE="$INFRA_DB_DIR/mssql/compose.localdb.yaml"
 MSSQL_INIT_CONTAINER_REMOTE="mssql_sales_init"
 MSSQL_INIT_CONTAINER_LOCAL="mssql_sales_init_local"
+SUPABASE_COMPOSE="$INFRA_DB_DIR/supabase/compose.yaml"
+SUPABASE_INIT_CONTAINER="supabase_sales_init"
 
 declare -A DB_COMPOSE_FILES=(
 	[mssql]="$MSSQL_REMOTE_COMPOSE"
 	[mysql]="$INFRA_DB_DIR/mysql/compose.yaml"
 	[mongo]="$INFRA_DB_DIR/mongo/compose.yaml"
 	[neo4j]="$INFRA_DB_DIR/neo4j/compose.yaml"
-	[supabase]=""
+	[supabase]="$SUPABASE_COMPOSE"
 )
 
 declare -A BACKEND_PATHS=(
@@ -86,6 +88,9 @@ declare -A FRONTEND_PORT_DEFAULTS=(
 	[supabase]=5004
 )
 
+OPEN_INDEX_AFTER=false
+MSSQL_MODE_EXPLICIT=false
+
 log_warn() {
 	printf '[warn] %s\n' "$1"
 }
@@ -96,6 +101,21 @@ log_error() {
 
 log_info() {
 	printf '[info] %s\n' "$1"
+}
+
+open_index_html() {
+	local index_file="$PROJECT_ROOT/index.html"
+	if [[ ! -f "$index_file" ]]; then
+		log_warn "No se encontró index.html en $PROJECT_ROOT"
+		return
+	fi
+	if command -v xdg-open >/dev/null 2>&1; then
+		xdg-open "$index_file" >/dev/null 2>&1 &
+	elif command -v open >/dev/null 2>&1; then
+		open "$index_file" >/dev/null 2>&1 &
+	else
+		log_warn "No se encontró comando para abrir el navegador (xdg-open/open)"
+	fi
 }
 
 show_help() {
@@ -344,6 +364,11 @@ start_database() {
 		fi
 	fi
 
+	if [[ "$stack" == "supabase" && "$init_flag" != "true" ]]; then
+		log_info "Stack supabase usa instancia remota; se omite despliegue local"
+		return
+	fi
+
 	if [[ -z "$compose_file" ]]; then
 		log_info "Stack $stack no tiene base de datos local que levantar"
 		return
@@ -381,6 +406,7 @@ wait_for_init_container() {
 		mysql) container_name="mysql_sales_init" ;;
 		mongo) container_name="mongo_sales_init" ;;
 		neo4j) container_name="neo4j_sales_init" ;;
+		supabase) container_name="$SUPABASE_INIT_CONTAINER" ;;
 		*) return ;;
 	esac
 	
@@ -610,7 +636,9 @@ handle_init() {
 	stop_stack_processes "$stack"
 	start_database "$stack" true
 	wait_for_init_container "$stack"
-	run_prisma_tasks "$stack"
+	if [[ "$stack" == "mssql" || "$stack" == "mysql" ]]; then
+		run_prisma_tasks "$stack"
+	fi
 	start_backend "$stack"
 	start_frontend "$stack"
 	summary_urls "$stack"
@@ -640,10 +668,12 @@ parse_args() {
 				;;
 			--local)
 				mode_override="local"
+				MSSQL_MODE_EXPLICIT=true
 				shift
 				;;
 			--remote)
 				mode_override="remote"
+				MSSQL_MODE_EXPLICIT=true
 				shift
 				;;
 			all)
@@ -685,8 +715,15 @@ parse_args() {
 		MSSQL_MODE="$mode_override"
 	fi
 
+	if [[ "$ACTION" == "init" && "$MSSQL_MODE_EXPLICIT" == false ]]; then
+		MSSQL_MODE="remote"
+	fi
+
 	if [[ "$include_all" == true ]]; then
 		TARGETS=(${STACKS[@]})
+		if [[ "$ACTION" != "down" ]]; then
+			OPEN_INDEX_AFTER=true
+		fi
 	elif [[ ${#TARGETS[@]} -eq 0 ]]; then
 		TARGETS=(${STACKS[@]})
 	fi
@@ -720,6 +757,10 @@ main() {
 				;;
 		esac
 	done
+
+	if [[ "$OPEN_INDEX_AFTER" == true && "$ACTION" != "down" ]]; then
+		open_index_html
+	fi
 }
 
 main "$@"
