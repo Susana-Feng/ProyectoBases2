@@ -26,10 +26,10 @@ def get_mssql_connection() -> Generator:
         username = os.getenv('MSSQL_DW_USER', 'your_username')
         password = os.getenv('MSSQL_DW_PASS', 'your_password')
         port = os.getenv('MSSQL_DW_PORT', '1433')
-        driver = os.getenv('DB_DRIVER', '{ODBC Driver 17 for SQL Server}')
-        
+        driver = os.getenv('DB_DRIVER', '{ODBC Driver 18 for SQL Server}')
 
-        connection_string = f'DRIVER={driver};SERVER={server},{port};DATABASE={database};UID={username};PWD={password}'
+        # TrustServerCertificate=yes is required for self-signed certificates
+        connection_string = f'DRIVER={driver};SERVER={server},{port};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes'
 
         # Crear conexión
         connection = pyodbc.connect(connection_string)
