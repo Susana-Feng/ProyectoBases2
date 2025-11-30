@@ -2,11 +2,14 @@ import random
 import string
 import unicodedata
 from datetime import datetime, timedelta
+from io import StringIO
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
+from uuid import uuid4
 
 from faker import Faker
 import pandas as pd
+import csv
 
 
 BASE_DIR = Path(__file__).parent
@@ -190,6 +193,7 @@ def generar_datos_clientes_supabase(num_clientes: int = 600) -> List[Dict[str, A
         correos_usados.add(email)
 
         cliente = {
+            'cliente_id': str(uuid4()),
             'nombre': nombre,
             'email': email,
             'genero': random.choice(['M', 'F']),
@@ -448,6 +452,7 @@ def distribuir_productos_entre_catalogos(
                 sku_value = ''
             productos_supabase.append(
                 {
+                    'producto_id': str(uuid4()),
                     'sku': sku_value,
                     'nombre': prod['nombre'],
                     'categoria': prod['categoria'],
@@ -690,108 +695,126 @@ def generate_orders_supabase(num_orders: int, clientes: List[Dict[str, Any]], pr
     details: List[Dict[str, Any]] = []
     dates = _sample_order_dates(num_orders)
     canales = ["WEB", "APP", "PARTNER"]
-    
-    # Assign indices to clientes and productos for referencing
-    for idx, c in enumerate(clientes, start=1):
-        c['_idx'] = idx
-    for idx, p in enumerate(productos, start=1):
-        p['_idx'] = idx
-    
-    for i, fecha in enumerate(dates, start=1):
+
+    for c in clientes:
+        c.setdefault('cliente_id', str(uuid4()))
+    for p in productos:
+        p.setdefault('producto_id', str(uuid4()))
+
+    for fecha in dates:
         cliente = random.choice(clientes)
+        orden_id = str(uuid4())
         moneda = random.choice(["USD", "CRC"])
         num_items = random.randint(1, 5)
         total = 0.0
-        line_items = []
+
         for _ in range(num_items):
             prod = random.choice(productos)
             cantidad = random.randint(1, 5)
             precio = round(random.uniform(5, 500), 2)
             total += cantidad * precio
-            line_items.append(
+            details.append(
                 {
-                    "orden_idx": i,
-                    "producto_idx": prod['_idx'],
+                    "orden_detalle_id": str(uuid4()),
+                    "orden_id": orden_id,
+                    "producto_id": prod['producto_id'],
                     "cantidad": cantidad,
-                    "precio_unit": precio,
-                    "sku": prod["sku"],
-                    "nombre": prod["nombre"],
+                    "precio_unit": round(precio, 2),
                 }
             )
+
         orders.append(
             {
-                "orden_idx": i,
-                "cliente_idx": cliente['_idx'],
+                "orden_id": orden_id,
+                "cliente_id": cliente['cliente_id'],
                 "fecha": fecha.isoformat(),
                 "canal": random.choice(canales),
                 "moneda": moneda,
                 "total": round(total, 2),
             }
         )
-        details.extend(line_items)
+
     return orders, details
 
 
 def write_supabase_sql(clientes, productos, orders, details, path: Path) -> None:
-    lines: List[str] = []
-    
-    # Insert clientes
-    for c in clientes:
-        nombre = c["nombre"].replace("'", "''")
-        email = (c["email"] or "").replace("'", "''") if c.get("email") is not None else ""
-        pais = c["pais"].replace("'", "''")
-        lines.append(
-            "INSERT INTO cliente (nombre, email, genero, pais, fecha_registro) "
-            f"VALUES ('{nombre}', '{email or ''}', '{c['genero']}', '{pais}', '{c['fecha_registro']}');"
+    def write_copy_section(fh, statement: str, rows: List[List[Any]]) -> None:
+        fh.write(statement + "\n")
+        if rows:
+            buffer = StringIO()
+            writer = csv.writer(buffer, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+            for row in rows:
+                normalized = ["\\N" if value is None else value for value in row]
+                writer.writerow(normalized)
+            fh.write(buffer.getvalue())
+        fh.write("\\.\n\n")
+
+    cliente_rows = [
+        [
+            c['cliente_id'],
+            c['nombre'],
+            c.get('email') or '',
+            c['genero'],
+            c['pais'],
+            c['fecha_registro'],
+        ]
+        for c in clientes
+    ]
+
+    producto_rows = [
+        [
+            p['producto_id'],
+            p['sku'] or None,
+            p['nombre'],
+            p['categoria'],
+        ]
+        for p in productos
+    ]
+
+    orden_rows = [
+        [
+            o['orden_id'],
+            o['cliente_id'],
+            o['fecha'],
+            o['canal'],
+            o['moneda'],
+            f"{o['total']:.2f}",
+        ]
+        for o in orders
+    ]
+
+    detalle_rows = [
+        [
+            d['orden_detalle_id'],
+            d['orden_id'],
+            d['producto_id'],
+            d['cantidad'],
+            f"{d['precio_unit']:.2f}",
+        ]
+        for d in details
+    ]
+
+    with path.open('w', encoding='utf-8', newline='\n') as fh:
+        write_copy_section(
+            fh,
+            "COPY cliente (cliente_id, nombre, email, genero, pais, fecha_registro) FROM STDIN WITH (FORMAT csv, NULL '\\N');",
+            cliente_rows,
         )
-    lines.append("")
-    
-    # Insert productos
-    for p in productos:
-        nombre = p["nombre"].replace("'", "''")
-        categoria = p["categoria"].replace("'", "''")
-        sku = p["sku"]
-        sku_val = f"'{sku}'" if sku else "NULL"
-        lines.append(
-            "INSERT INTO producto (sku, nombre, categoria) "
-            f"VALUES ({sku_val}, '{nombre}', '{categoria}');"
+        write_copy_section(
+            fh,
+            "COPY producto (producto_id, sku, nombre, categoria) FROM STDIN WITH (FORMAT csv, NULL '\\N');",
+            producto_rows,
         )
-    lines.append("")
-    
-    # Create temporary mapping tables
-    lines.append("-- Create temporary tables for mapping")
-    lines.append("CREATE TEMP TABLE _cliente_map AS SELECT cliente_id, ROW_NUMBER() OVER (ORDER BY cliente_id) AS idx FROM cliente;")
-    lines.append("CREATE TEMP TABLE _producto_map AS SELECT producto_id, ROW_NUMBER() OVER (ORDER BY producto_id) AS idx FROM producto;")
-    lines.append("")
-    
-    # Insert orders with proper cliente_id lookup
-    for o in orders:
-        lines.append(
-            "INSERT INTO orden (cliente_id, fecha, canal, moneda, total) "
-            f"SELECT cliente_id, '{o['fecha']}', '{o['canal']}', '{o['moneda']}', {o['total']} "
-            f"FROM _cliente_map WHERE idx = {o['cliente_idx']};"
+        write_copy_section(
+            fh,
+            "COPY orden (orden_id, cliente_id, fecha, canal, moneda, total) FROM STDIN WITH (FORMAT csv, NULL '\\N');",
+            orden_rows,
         )
-    lines.append("")
-    
-    # Create orden mapping table
-    lines.append("CREATE TEMP TABLE _orden_map AS SELECT orden_id, ROW_NUMBER() OVER (ORDER BY orden_id) AS idx FROM orden;")
-    lines.append("")
-    
-    # Insert order details with proper orden_id and producto_id lookups
-    for d in details:
-        lines.append(
-            "INSERT INTO orden_detalle (orden_id, producto_id, cantidad, precio_unit) "
-            f"SELECT o.orden_id, p.producto_id, {d['cantidad']}, {d['precio_unit']} "
-            f"FROM _orden_map o, _producto_map p WHERE o.idx = {d['orden_idx']} AND p.idx = {d['producto_idx']};"
+        write_copy_section(
+            fh,
+            "COPY orden_detalle (orden_detalle_id, orden_id, producto_id, cantidad, precio_unit) FROM STDIN WITH (FORMAT csv, NULL '\\N');",
+            detalle_rows,
         )
-    
-    lines.append("")
-    lines.append("-- Clean up temporary tables")
-    lines.append("DROP TABLE IF EXISTS _cliente_map;")
-    lines.append("DROP TABLE IF EXISTS _producto_map;")
-    lines.append("DROP TABLE IF EXISTS _orden_map;")
-    
-    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def generate_orders_mongo(num_orders: int, clientes: List[Dict[str, Any]], productos: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
