@@ -24,8 +24,14 @@ fi
 
 STACKS=(mssql mysql mongo neo4j supabase)
 
+MSSQL_MODE="remote"
+MSSQL_REMOTE_COMPOSE="$INFRA_DB_DIR/mssql/compose.yaml"
+MSSQL_LOCAL_COMPOSE="$INFRA_DB_DIR/mssql/compose.localdb.yaml"
+MSSQL_INIT_CONTAINER_REMOTE="mssql_sales_init"
+MSSQL_INIT_CONTAINER_LOCAL="mssql_sales_init_local"
+
 declare -A DB_COMPOSE_FILES=(
-	[mssql]="$INFRA_DB_DIR/mssql/compose.yaml"
+	[mssql]="$MSSQL_REMOTE_COMPOSE"
 	[mysql]="$INFRA_DB_DIR/mysql/compose.yaml"
 	[mongo]="$INFRA_DB_DIR/mongo/compose.yaml"
 	[neo4j]="$INFRA_DB_DIR/neo4j/compose.yaml"
@@ -40,28 +46,12 @@ declare -A BACKEND_PATHS=(
 	[supabase]="$PROJECT_ROOT/services/api-supabase"
 )
 
-declare -A FRONTEND_PATHS=(
-	[mssql]="$PROJECT_ROOT/apps/web-mssql"
-	[mysql]="$PROJECT_ROOT/apps/web-mysql"
-	[mongo]="$PROJECT_ROOT/apps/web-mongo"
-	[neo4j]="$PROJECT_ROOT/apps/web-neo4j"
-	[supabase]="$PROJECT_ROOT/apps/web-supabase"
-)
-
 declare -A BACKEND_RUNNERS=(
-	[mssql]=bun
-	[mysql]=bun
-	[mongo]=uv
-	[neo4j]=uv
-	[supabase]=uv
-)
-
-declare -A FRONTEND_RUNNERS=(
-	[mssql]=bun
-	[mysql]=bun
-	[mongo]=pnpm
-	[neo4j]=pnpm
-	[supabase]=pnpm
+	[mssql]="bun"
+	[mysql]="bun"
+	[mongo]="uv"
+	[neo4j]="uv"
+	[supabase]="uv"
 )
 
 declare -A BACKEND_PORT_DEFAULTS=(
@@ -72,6 +62,22 @@ declare -A BACKEND_PORT_DEFAULTS=(
 	[supabase]=3004
 )
 
+declare -A FRONTEND_PATHS=(
+	[mssql]="$PROJECT_ROOT/apps/web-mssql"
+	[mysql]="$PROJECT_ROOT/apps/web-mysql"
+	[mongo]="$PROJECT_ROOT/apps/web-mongo"
+	[neo4j]="$PROJECT_ROOT/apps/web-neo4j"
+	[supabase]="$PROJECT_ROOT/apps/web-supabase"
+)
+
+declare -A FRONTEND_RUNNERS=(
+	[mssql]="bun"
+	[mysql]="bun"
+	[mongo]="pnpm"
+	[neo4j]="pnpm"
+	[supabase]="pnpm"
+)
+
 declare -A FRONTEND_PORT_DEFAULTS=(
 	[mssql]=5000
 	[mysql]=5001
@@ -79,10 +85,6 @@ declare -A FRONTEND_PORT_DEFAULTS=(
 	[neo4j]=5003
 	[supabase]=5004
 )
-
-log_info() {
-	printf '[info] %s\n' "$1"
-}
 
 log_warn() {
 	printf '[warn] %s\n' "$1"
@@ -92,9 +94,14 @@ log_error() {
 	printf '[err] %s\n' "$1" >&2
 }
 
+log_info() {
+	printf '[info] %s\n' "$1"
+}
+
 show_help() {
 	cat <<'EOF'
 Uso: ./scripts/dev.sh [--up|--down|--init] [stack1,stack2,...]
+	[--local|--remote]
 
 Stacks disponibles:
   mssql, mysql, mongo, neo4j, supabase, all
@@ -110,7 +117,19 @@ Ejemplos:
   ./scripts/dev.sh --init all
   ./scripts/dev.sh --init mssql,mysql
   ./scripts/dev.sh --down mssql,mysql,mongo
+
+Modos MSSQL:
+  --remote (por defecto)  Usa la instancia externa configurada en .env*
+  --local                 Levanta el contenedor local de SQL Server e ignora los jobs BCCR
 EOF
+}
+
+set_mssql_compose_file() {
+	if [[ "$MSSQL_MODE" == "local" ]]; then
+		DB_COMPOSE_FILES[mssql]="$MSSQL_LOCAL_COMPOSE"
+	else
+		DB_COMPOSE_FILES[mssql]="$MSSQL_REMOTE_COMPOSE"
+	fi
 }
 
 ensure_command() {
@@ -147,6 +166,41 @@ read_env_value() {
 		value=${value#\"}
 		value=${value%\"}
 		printf '%s' "$value"
+	fi
+}
+
+is_remote_mssql() {
+	local host
+	host=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_HOST "")
+	if [[ -n "$host" ]]; then
+		printf 'true'
+	else
+		printf 'false'
+	fi
+}
+
+run_remote_mssql_init() {
+	local host port pass seed_file sqlcmd_bin server
+	host=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_HOST "")
+	port=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_PORT "15433")
+	pass=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_PASS "YourStrong@Passw0rd1")
+	if [[ -z "$host" ]]; then
+		log_error "MSSQL_REMOTE_HOST no está definido en $COMPOSE_ENV_FILE"
+		exit 1
+	fi
+	ensure_command sqlcmd
+	server="$host,$port"
+	log_info "Inicializando MSSQL remoto en $server"
+	for f in $(ls -1 "$INFRA_DB_DIR/mssql/init"/*.sql 2>/dev/null | sort); do
+		log_info "Ejecutando $(basename "$f") en instancia remota"
+		sqlcmd -C -S "$server" -U sa -P "$pass" -i "$f"
+	done
+	seed_file="$PROJECT_ROOT/data/out/mssql_data.sql"
+	if [[ -f "$seed_file" ]]; then
+		log_info "Ejecutando seed $(basename "$seed_file")"
+		sqlcmd -C -S "$server" -U sa -P "$pass" -i "$seed_file"
+	else
+		log_info "Seed mssql_data.sql no encontrado, se omite"
 	fi
 }
 
@@ -232,6 +286,13 @@ start_database() {
 	local init_flag=$2
 	local compose_file=${DB_COMPOSE_FILES[$stack]:-}
 
+	if [[ "$stack" == "mssql" ]]; then
+		if [[ "$MSSQL_MODE" == "remote" && "$init_flag" != "true" ]]; then
+			log_info "Stack mssql usa instancia remota; se omite despliegue local"
+			return
+		fi
+	fi
+
 	if [[ -z "$compose_file" ]]; then
 		log_info "Stack $stack no tiene base de datos local que levantar"
 		return
@@ -259,7 +320,13 @@ wait_for_init_container() {
 	local container_name=""
 	
 	case "$stack" in
-		mssql) container_name="mssql_sales_init" ;;
+		mssql)
+			if [[ "$MSSQL_MODE" == "local" ]]; then
+				container_name="$MSSQL_INIT_CONTAINER_LOCAL"
+			else
+				container_name="$MSSQL_INIT_CONTAINER_REMOTE"
+			fi
+			;;
 		mysql) container_name="mysql_sales_init" ;;
 		mongo) container_name="mongo_sales_init" ;;
 		neo4j) container_name="neo4j_sales_init" ;;
@@ -505,6 +572,7 @@ parse_args() {
 	ACTION=""
 	TARGETS=()
 	local include_all=false
+	local mode_override=""
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
@@ -514,6 +582,14 @@ parse_args() {
 					exit 1
 				fi
 				ACTION=${1#--}
+				shift
+				;;
+			--local)
+				mode_override="local"
+				shift
+				;;
+			--remote)
+				mode_override="remote"
 				shift
 				;;
 			all)
@@ -551,6 +627,10 @@ parse_args() {
 		exit 1
 	fi
 
+	if [[ -n "$mode_override" ]]; then
+		MSSQL_MODE="$mode_override"
+	fi
+
 	if [[ "$include_all" == true ]]; then
 		TARGETS=(${STACKS[@]})
 	elif [[ ${#TARGETS[@]} -eq 0 ]]; then
@@ -564,6 +644,7 @@ main() {
 	ensure_command bash
 	detect_compose
 	parse_args "$@"
+	set_mssql_compose_file
 
 	for stack in "${TARGETS[@]}"; do
 		case "$stack" in

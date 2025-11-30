@@ -1,44 +1,19 @@
 name: mssql_sales_stack
 
 services:
-  mssql_sales:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: mssql_sales
-    env_file:
-      - ../../../../.env.local
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${MSSQL_PASS:-YourStrong@Passw0rd1}"
-      MSSQL_PID: "Developer"
-    ports:
-      - "${MSSQL_PORT:-1433}:1433"
-    volumes:
-      - mssql_sales_data:/var/opt/mssql
-      - ./init:/scripts
-    networks:
-      - sales_net
-    healthcheck:
-      test: [ "CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P $$MSSQL_SA_PASSWORD -Q \"SELECT 1\" || exit 1" ]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-
   init_sales:
     image: mcr.microsoft.com/mssql-tools:latest
     container_name: mssql_sales_init
-    depends_on:
-      mssql_sales:
-        condition: service_healthy
     env_file:
       - ../../../../.env.local
     environment:
-      MSSQL_SA_PASSWORD: "${MSSQL_PASS:-YourStrong@Passw0rd1}"
-      MSSQL_HOST: "mssql_sales"
+      MSSQL_SA_PASSWORD: "${MSSQL_REMOTE_PASS:-YourStrong@Passw0rd1}"
+      MSSQL_HOST: "${MSSQL_REMOTE_HOST:-127.0.0.1}"
+      MSSQL_PORT: "${MSSQL_REMOTE_PORT:-15433}"
     volumes:
       - ./init:/scripts
       - ../../../../data/out:/seed_data:ro
-    networks:
-      - sales_net
+    network_mode: host
     profiles:
       - init
     entrypoint:
@@ -47,13 +22,3 @@ services:
       - |
         find /scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
         bash /scripts/run-init.sh
-
-volumes:
-  mssql_sales_data:
-    name: mssql_sales_data
-
-networks:
-  sales_net:
-    name: sales_net
-    driver: bridge
-    external: true
