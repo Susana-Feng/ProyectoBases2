@@ -11,8 +11,14 @@
 USE DB_SALES;
 GO
 
+-- Asegurarnos de eliminar las tablas en orden de dependencias
+IF OBJECT_ID('dbo.OrdenDetalle', 'U') IS NOT NULL DROP TABLE dbo.OrdenDetalle;
+IF OBJECT_ID('dbo.Orden', 'U') IS NOT NULL DROP TABLE dbo.Orden;
+IF OBJECT_ID('dbo.Producto', 'U') IS NOT NULL DROP TABLE dbo.Producto;
+IF OBJECT_ID('dbo.Cliente', 'U') IS NOT NULL DROP TABLE dbo.Cliente;
+
 -- Nota: No eliminamos el esquema 'dbo' ya que es el esquema por defecto del sistema
--- y siempre existe. Solo eliminamos las tablas si existen.
+-- y siempre existe. Solo recreamos las tablas.
 
 -- ========= TABLA DE CLIENTES =========
 CREATE TABLE dbo.Cliente (

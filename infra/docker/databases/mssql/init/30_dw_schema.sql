@@ -77,7 +77,7 @@ CREATE TABLE stg.tipo_cambio (
   fecha DATE       NOT NULL,
   de    CHAR(3)    NOT NULL,                       -- 'CRC', 'USD', etc.
   a     CHAR(3)    NOT NULL,                       -- 'USD' (target DW)
-  tasa  DECIMAL(18,6) NOT NULL,                    -- monto en 'a' por 1 unidad de 'de'
+  tasa  DECIMAL(18,6) NOT NULL,                    -- valor publicado por el BCCR (CRC por USD)
   fuente NVARCHAR(64) NULL,                        -- e.g. 'BCCR WS'
   LoadTS DATETIME2(3) NOT NULL DEFAULT SYSDATETIME(), -- auditoría
   CONSTRAINT PK_tipo_cambio PRIMARY KEY (fecha, de, a)
@@ -137,9 +137,9 @@ CREATE TABLE dw.DimTiempo (
   Anio           INT          NOT NULL,
   Mes            TINYINT      NOT NULL,
   Dia            TINYINT      NOT NULL,
-  -- TCs derivados de stg.tipo_cambio para acelerar consultas
-  TC_CRC_USD     DECIMAL(18,6) NULL,                  -- USD por 1 CRC
-  TC_USD_CRC     DECIMAL(18,6) NULL,                  -- CRC por 1 USD
+  -- TCs derivados de stg.tipo_cambio para acelerar consultas (valores BCCR en CRC por USD)
+  TC_CRC_USD     DECIMAL(18,6) NULL,                  -- Tasa de compra (CRC por USD)
+  TC_USD_CRC     DECIMAL(18,6) NULL,                  -- Tasa de venta (CRC por USD)
   -- auditoría
   LoadTS         DATETIME2(3)  NOT NULL DEFAULT SYSDATETIME()
 );
