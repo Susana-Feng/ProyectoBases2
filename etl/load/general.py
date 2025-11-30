@@ -37,6 +37,9 @@ query_insert_DimTime = """
         DAY(Fecha) AS Dia,
         GETDATE() AS LoadTS
     FROM Fechas
+    WHERE NOT EXISTS (
+        SELECT 1 FROM dw.DimTiempo dt WHERE dt.Fecha = Fechas.Fecha
+    )
     OPTION (MAXRECURSION 0);
 """
 
@@ -61,7 +64,18 @@ query_insert_dimCliente_dw = """
         TiempoID,
         GETDATE() AS LoadTS
     FROM dw.DimTiempo
-    WHERE Fecha = :FechaCreacion;
+    WHERE Fecha = :FechaCreacion
+        AND NOT EXISTS (
+            SELECT 1 FROM dw.DimCliente dc 
+            WHERE dc.SourceSystem = :sourceSystem 
+            AND dc.SourceKey = :sourceKey
+        );
+"""
+
+query_check_existing_cliente = """
+    SELECT COUNT(*) 
+    FROM dw.DimCliente 
+    WHERE SourceSystem = :SourceSystem AND SourceKey = :SourceKey
 """
 
 query_select_clientes_stg = """
@@ -154,18 +168,23 @@ query_insert_factVentas = """
         O.moneda,
         O.precio_unit_raw,
         O.total_raw,
-        O.source_key_orden,
+        O.source_key_orden + '-' + O.source_key_item,
         GETDATE() AS LoadTS
-    FROM
-        dw.DimTiempo AS T,
-        stg.orden_items AS O
+    FROM stg.orden_items AS O
+    INNER JOIN dw.DimTiempo AS T
+        ON T.Fecha = O.fecha_dt
     INNER JOIN dw.DimCliente AS C
         ON O.cliente_key = C.SourceKey
+        AND O.source_system = C.SourceSystem
     INNER JOIN dw.DimProducto AS P
         ON O.source_code_prod = P.SourceKey
-    WHERE
-        T.Fecha = O.fecha_dt
-        AND O.load_ts > :last_load_ts
+        AND O.source_system = P.SourceSystem
+    WHERE O.load_ts > :last_load_ts
+        AND NOT EXISTS (
+            SELECT 1 FROM dw.FactVentas fv
+            WHERE fv.SourceKey = O.source_key_orden + '-' + O.source_key_item
+            AND fv.Fuente = O.source_system
+        )
 """
 
 query_select_new_orders = """
@@ -264,6 +283,14 @@ def product_exists(conn, source_system, source_key):
     })
     return result.fetchone()[0] > 0
 
+def cliente_exists(conn, source_system, source_key):
+    """Verifica si un cliente ya existe en el DW"""
+    result = conn.execute(text(query_check_existing_cliente), {
+        'SourceSystem': source_system,
+        'SourceKey': source_key
+    })
+    return result.fetchone()[0] > 0
+
 def load_dim_tiempo(conn):
     """Carga DimTiempo solo si es necesario"""
     # Verificar si ya tenemos fechas hasta hoy
@@ -286,7 +313,7 @@ def load_dim_tiempo(conn):
         return True
 
 def load_dim_cliente(conn):
-    """Carga solo clientes nuevos"""
+    """Carga solo clientes nuevos, evitando duplicados"""
     last_load_ts = get_last_load_timestamp(conn, "dw.DimCliente")
     clientes_stg = get_clientes_stg(conn, last_load_ts)
     
@@ -294,20 +321,29 @@ def load_dim_cliente(conn):
         print("No hay nuevos clientes para cargar")
         return 0
     
-    print(f"Cargando {len(clientes_stg)} nuevos clientes...")
+    print(f"Procesando {len(clientes_stg)} clientes del staging...")
+    
+    loaded_count = 0
+    skipped_count = 0
     
     for cliente in clientes_stg:
-        conn.execute(text(query_insert_dimCliente_dw), {
-            'sourceSystem': cliente.sourceSystem, 
-            'sourceKey': cliente.sourceCode,
-            'Email': cliente.Email, 
-            'Nombre': cliente.Nombre, 
-            'Genero': cliente.Genero, 
-            'Pais': cliente.Pais,
-            'FechaCreacion': cliente.FechaCreacion
-        })
+        # Doble verificación para evitar duplicados
+        if not cliente_exists(conn, cliente.sourceSystem, cliente.sourceCode):
+            conn.execute(text(query_insert_dimCliente_dw), {
+                'sourceSystem': cliente.sourceSystem, 
+                'sourceKey': cliente.sourceCode,
+                'Email': cliente.Email, 
+                'Nombre': cliente.Nombre, 
+                'Genero': cliente.Genero, 
+                'Pais': cliente.Pais,
+                'FechaCreacion': cliente.FechaCreacion
+            })
+            loaded_count += 1
+        else:
+            skipped_count += 1
     
-    return len(clientes_stg)
+    print(f"  Clientes cargados: {loaded_count}, omitidos (duplicados): {skipped_count}")
+    return loaded_count
 
 def load_dim_producto(conn):
     """Carga productos - maneja la falta de load_ts en map_producto"""
@@ -365,10 +401,10 @@ def load_dim_producto_initial(conn):
     return loaded_count
 
 def load_fact_ventas(conn):
-    """Carga solo ventas nuevas"""
+    """Carga solo ventas nuevas, evitando duplicados"""
     last_load_ts = get_last_load_timestamp(conn, "dw.FactVentas")
     
-    # Verificar si hay nuevas ventas
+    # Verificar si hay nuevas ventas en staging
     result = conn.execute(text(query_select_new_orders), 
                          {'last_load_ts': last_load_ts})
     new_records = result.fetchone()[0]
@@ -377,11 +413,24 @@ def load_fact_ventas(conn):
         print("No hay nuevas ventas para cargar")
         return 0
     
-    print(f"Cargando {new_records} nuevas ventas...")
+    print(f"Procesando {new_records} ventas del staging...")
+    
+    # Contar cuántos registros había antes
+    count_before_query = "SELECT COUNT(*) FROM dw.FactVentas"
+    count_before = conn.execute(text(count_before_query)).fetchone()[0]
+    
+    # Insertar (el query ya tiene NOT EXISTS para evitar duplicados)
     conn.execute(text(query_insert_factVentas), 
                 {'last_load_ts': last_load_ts})
     
-    return new_records
+    # Contar cuántos registros hay después
+    count_after = conn.execute(text(count_before_query)).fetchone()[0]
+    
+    loaded_count = count_after - count_before
+    skipped_count = new_records - loaded_count
+    
+    print(f"  Ventas cargadas: {loaded_count}, omitidas (duplicados): {skipped_count}")
+    return loaded_count
 
 ''' -----------------------------------------------------------------------
             Funcion principal para cargar el DataWarehouse

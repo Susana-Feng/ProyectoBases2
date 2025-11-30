@@ -398,13 +398,13 @@ def check_tc_availability(fecha_inicio: str, fecha_fin: str):
         result = conn.execute(
             text(
                 """
-            SELECT
-                COUNT(*) as registros,
-                MIN(fecha) as fecha_min,
-                MAX(fecha) as fecha_max
-            FROM stg.tipo_cambio
-            WHERE fecha BETWEEN :inicio AND :fin
-              AND de = 'CRC' AND a = 'USD'
+                        SELECT
+                                COUNT(*) as registros,
+                                MIN(fecha) as fecha_min,
+                                MAX(fecha) as fecha_max
+                        FROM stg.tipo_cambio
+                        WHERE fecha BETWEEN :inicio AND :fin
+                            AND de = 'USD' AND a = 'CRC'
         """
             ),
             {"inicio": fecha_inicio, "fin": fecha_fin},
@@ -419,7 +419,7 @@ def check_tc_availability(fecha_inicio: str, fecha_fin: str):
             print(f"Rango real: {row[1]} a {row[2]}")
         else:
             print(
-                "⚠️  No hay tipos de cambio. Ejecutar: python -m jobs.bccr_tc_historico"
+                "⚠️  No hay tipos de cambio. Ejecuta el job 'BCCR_TipoCambio_Diario' en SQL Server"
             )
 
 
