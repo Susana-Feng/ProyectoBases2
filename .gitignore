@@ -158,3 +158,4 @@ venv/
 .env.local
 __pycache__/
 *.pyc
+rewrite-secrets.txt
