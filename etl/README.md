@@ -1,71 +1,287 @@
-# ETLs & Jobs
+# ETL - Data Warehouse de Ventas
 
-Este paquete contiene extractores, transformaciones y cargas (ETL) y jobs programados usados por el proyecto.
+Este módulo contiene el proceso ETL (Extract, Transform, Load) que integra datos de múltiples fuentes transaccionales heterogéneas en un Data Warehouse central en SQL Server.
 
-## Resumen rápido
-- Directorio principal: `etl/`
-- Script de entrada: `main.py`
-- ETLs implementados: MongoDB, MS SQL Server, MySQL, Supabase
+## Arquitectura General
 
-## Fuentes de Datos
+```
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│   MS SQL    │  │    MySQL    │  │  Supabase   │  │   MongoDB   │  │    Neo4j    │
+│  (DB_SALES) │  │  (DB_SALES) │  │ (PostgreSQL)│  │  (tiendaDB) │  │   (Graph)   │
+└──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+       │                │                │                │                │
+       ▼                ▼                ▼                ▼                ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                         [1] EXTRACT (extract/*.py)                               │
+│  Extraer productos, clientes, órdenes y detalles de cada fuente                 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                    [2] BUILD EQUIVALENCES (equivalences.py)                      │
+│                                                                                  │
+│  Construir mapa de equivalencias de productos ANTES de transformar:             │
+│  • Agrupar productos por (nombre, categoría) de TODAS las fuentes               │
+│  • Para cada grupo, determinar el SKU usando prioridad:                          │
+│    1. MSSQL SKU (canónico)                                                       │
+│    2. Supabase SKU                                                               │
+│    3. MongoDB equivalencias.sku                                                  │
+│    4. Neo4j sku                                                                  │
+│    5. Generar nuevo SKU                                                          │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                         [3] TRANSFORM (transform/*.py)                           │
+│  Cada fuente consulta el mapa de equivalencias para obtener el SKU correcto     │
+│  • Normalización de géneros, fechas, montos                                      │
+│  • Registro en stg.map_producto con el SKU resuelto                              │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                              STAGING (stg.*)                                     │
+│  • stg.clientes        - Clientes normalizados de todas las fuentes             │
+│  • stg.map_producto    - Tabla puente de equivalencias SKU ↔ códigos            │
+│  • stg.orden_items     - Ítems de órdenes normalizados                          │
+│  • stg.tipo_cambio     - Tipos de cambio CRC/USD del BCCR                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                          [4] LOAD (load/general.py)                              │
+│  Carga al Data Warehouse con modelo estrella                                     │
+└──────────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                            DATA WAREHOUSE (dw.*)                                 │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                          │
+│  │ DimCliente  │───▶│ FactVentas  │◀───│ DimProducto │                          │
+│  └─────────────┘    └──────┬──────┘    └─────────────┘                          │
+│                            │                                                     │
+│                     ┌──────▼──────┐                                             │
+│                     │  DimTiempo  │                                             │
+│                     └─────────────┘                                             │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
 
-### Implementadas
-- ✅ **MongoDB**: Base de datos de documentos con órdenes en CRC
-- ✅ **MS SQL Server (DB_SALES)**: Base de datos transaccional con SKU oficial en USD
-- ✅ **PostgreSQL/Supabase**: UUIDs, productos sin SKU (servicios)
+## Fuentes de Datos y Heterogeneidades
 
-### Pendientes
-- ⏳ **MySQL**: Códigos alternos, precios en string, fechas en texto
-- ⏳ **Neo4j**: Grafo de compras
+El ETL integra 5 fuentes de datos con diferentes formatos y estructuras:
+
+| Fuente | Código Producto | Moneda | Género | Fechas | Montos |
+|--------|-----------------|--------|--------|--------|--------|
+| **MS SQL Server** | SKU (oficial) | USD | Masculino/Femenino | DATETIME2 | DECIMAL |
+| **MySQL** | codigo_alt | USD/CRC | M/F/X | VARCHAR | VARCHAR con comas |
+| **Supabase** | SKU (puede estar vacío) | USD/CRC | M/F | TIMESTAMPTZ | NUMERIC |
+| **MongoDB** | codigo_mongo + equivalencias | CRC (enteros) | Masculino/Femenino/Otro | ISODate | INT |
+| **Neo4j** | sku + codigo_alt + codigo_mongo | USD/CRC | M/F/Otro/Masculino/Femenino | datetime | FLOAT |
+
+## Sistema de Mapeo de Productos
+
+### El Problema
+
+Cada fuente usa diferentes códigos para identificar productos:
+- MSSQL usa `SKU` (oficial)
+- MySQL usa `codigo_alt`
+- Supabase usa `SKU` (puede estar vacío)
+- MongoDB usa `codigo_mongo` + campo `equivalencias.sku`
+- Neo4j tiene todos los códigos (`sku`, `codigo_alt`, `codigo_mongo`)
+
+Un mismo producto puede existir en múltiples fuentes con diferentes códigos. El reto es asignar un **SKU único** a cada producto.
+
+### La Solución: Mapa de Equivalencias
+
+**ANTES de transformar**, el ETL construye un mapa de equivalencias analizando los productos de **TODAS las fuentes**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        FASE DE EQUIVALENCIAS                                │
+│                                                                             │
+│  1. Extraer productos de todas las fuentes                                  │
+│  2. Agrupar por (nombre, categoría) - case insensitive                      │
+│  3. Para cada grupo, buscar el mejor SKU:                                   │
+│     ├─► ¿MSSQL tiene SKU? → Usar ese (prioridad 1)                         │
+│     ├─► ¿Supabase tiene SKU? → Usar ese (prioridad 2)                      │
+│     ├─► ¿MongoDB tiene equivalencias.sku? → Usar ese (prioridad 3)         │
+│     ├─► ¿Neo4j tiene sku? → Usar ese (prioridad 4)                         │
+│     └─► Ninguno tiene SKU → Generar nuevo (SKU-XXXX)                       │
+│  4. Resultado: Mapa (nombre, categoria) → SKU oficial                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Tabla `stg.map_producto`
+
+```sql
+stg.map_producto
+├── source_system   -- 'mssql' | 'mysql' | 'supabase' | 'mongo' | 'neo4j'
+├── source_code     -- SKU, codigo_alt, codigo_mongo, UUID, etc.
+├── sku_oficial     -- Clave canónica para DimProducto
+├── nombre_norm     -- Nombre normalizado del producto
+├── categoria_norm  -- Categoría normalizada
+└── es_servicio     -- TRUE si es un servicio (sin SKU físico)
+```
+
+### Ejemplos de Mapeo
+
+**Caso 1: Producto existe en MSSQL (fuente canónica)**
+```
+Extracción:
+  MSSQL:    SKU="SKU-1000", nombre="Televisor LED 32", categoria="Electrónica"
+  MySQL:    codigo_alt="ALT-AB12", nombre="Televisor LED 32", categoria="Electrónica"
+  MongoDB:  codigo_mongo="MN-4000", equivalencias.sku="SKU-1000", nombre="Televisor LED 32"
+  Neo4j:    sku="SKU-1000", codigo_alt="ALT-AB12", codigo_mongo="MN-4000"
+
+Fase de Equivalencias:
+  └─► Agrupar por ("televisor led 32", "electrónica")
+  └─► MSSQL tiene SKU="SKU-1000" → Usar ese (prioridad 1)
+  └─► Resultado: sku_oficial = "SKU-1000"
+
+Transformación:
+  └─► MSSQL registra: (mssql, "1", "SKU-1000", "Televisor LED 32", "Electrónica")
+  └─► MySQL registra: (mysql, "ALT-AB12", "SKU-1000", "Televisor LED 32", "Electrónica")
+  └─► MongoDB registra: (mongo, "MN-4000", "SKU-1000", "Televisor LED 32", "Electrónica")
+  └─► Neo4j registra: (neo4j, "SKU-1000", "SKU-1000", "Televisor LED 32", "Electrónica")
+```
+
+**Caso 2: Producto NO existe en MSSQL, pero tiene equivalencias.sku en MongoDB**
+```
+Extracción:
+  MySQL:    codigo_alt="ALT-ZZ99", nombre="Producto Especial", categoria="Especial"
+  MongoDB:  codigo_mongo="MN-9999", equivalencias.sku="SKU-2000", nombre="Producto Especial"
+
+Fase de Equivalencias:
+  └─► Agrupar por ("producto especial", "especial")
+  └─► MSSQL: No tiene este producto
+  └─► Supabase: No tiene este producto
+  └─► MongoDB tiene equivalencias.sku="SKU-2000" → Usar ese (prioridad 3)
+  └─► Resultado: sku_oficial = "SKU-2000"
+
+Transformación:
+  └─► MySQL registra: (mysql, "ALT-ZZ99", "SKU-2000", "Producto Especial", "Especial")
+  └─► MongoDB registra: (mongo, "MN-9999", "SKU-2000", "Producto Especial", "Especial")
+```
+
+**Caso 3: Producto solo existe en MySQL (sin SKU en ninguna fuente)**
+```
+Extracción:
+  MySQL:    codigo_alt="ALT-NEW1", nombre="Producto Nuevo", categoria="Nueva"
+
+Fase de Equivalencias:
+  └─► Agrupar por ("producto nuevo", "nueva")
+  └─► Ninguna fuente tiene SKU
+  └─► Generar nuevo: SKU-0501
+  └─► Resultado: sku_oficial = "SKU-0501"
+
+Transformación:
+  └─► MySQL registra: (mysql, "ALT-NEW1", "SKU-0501", "Producto Nuevo", "Nueva")
+```
+
+**Caso 4: Servicio en Supabase (sin SKU físico)**
+```
+Extracción:
+  Supabase: producto_id="uuid-xxxx", sku=NULL, nombre="Consultoría", categoria="Servicios"
+
+Fase de Equivalencias:
+  └─► Agrupar por ("consultoría", "servicios")
+  └─► Ninguna fuente tiene SKU
+  └─► Generar nuevo: SKU-0502, marcar es_servicio=TRUE
+  └─► Resultado: sku_oficial = "SKU-0502"
+
+Transformación:
+  └─► Supabase registra: (supabase, "uuid-xxxx", "SKU-0502", "Consultoría", "Servicios", es_servicio=TRUE)
+```
+
+### Principio Clave
+
+> **El mapa de equivalencias se construye ANTES de la transformación usando información de TODAS las fuentes.**
+> 
+> Esto garantiza que:
+> - Si MongoDB tiene `equivalencias.sku`, ese SKU se usa incluso si MySQL se procesa primero
+> - Productos idénticos en diferentes fuentes siempre obtienen el mismo SKU
+> - Solo se generan SKUs nuevos cuando NINGUNA fuente tiene uno
+
+## Normalización de Datos
+
+### Género
+```
+M | Masculino       → "Masculino"
+F | Femenino        → "Femenino"
+X | Otro | NULL     → "No especificado"
+```
+
+### Moneda
+- **USD**: Se usa directamente
+- **CRC**: Se convierte a USD usando el tipo de cambio de `stg.tipo_cambio` para la fecha de la orden
+
+### Fechas
+- Todas las fechas se convierten a `DATE` para `DimTiempo`
+- Se usa el formato `YYYYMMDD` como `TiempoID`
+
+### Canales
+```
+WEB | TIENDA | APP | PARTNER → Se normalizan a mayúsculas
+```
 
 ## Idempotencia y Deduplicación
 
 El proceso ETL está diseñado para ser **idempotente**: ejecutarlo múltiples veces NO duplicará datos.
 
-### Mecanismos de deduplicación:
-1. **Staging (stg.*)**: Usa sentencias `MERGE` de SQL Server para upsert
-2. **DimCliente**: Verifica existencia antes de insertar (SourceSystem + SourceKey)
-3. **DimProducto**: Solo inserta productos que no existan en el DW
-4. **FactVentas**: Usa `NOT EXISTS` para evitar duplicados por SourceKey + Fuente
-5. **DimTiempo**: Solo inserta fechas que no existan
+### Mecanismos de Deduplicación
 
-## Requisitos
-- Python: la versión objetivo está en `.python-version` (por ejemplo 3.13+). Verifica con `python --version` o `python3 --version`.
-- Recomendado: crear un entorno virtual para aislar dependencias.
+| Componente | Mecanismo |
+|------------|-----------|
+| **Staging (stg.*)** | Sentencias `MERGE` de SQL Server para upsert |
+| **DimCliente** | Verifica existencia antes de insertar (`SourceSystem + SourceKey`) |
+| **DimProducto** | Solo inserta productos con SKU que no existan |
+| **FactVentas** | Usa `NOT EXISTS` para evitar duplicados (`SourceKey + Fuente`) |
+| **DimTiempo** | Solo inserta fechas que no existan |
 
-## Instalación
+## Tipos de Cambio (BCCR)
 
-```powershell
-cd etl
-uv sync          # instala dependencias de producción
-uv sync --dev    # instala dependencias de desarrollo
+El sistema obtiene tipos de cambio del Banco Central de Costa Rica para convertir CRC a USD:
+
+### Tabla `stg.tipo_cambio`
+```sql
+├── fecha    -- Fecha del tipo de cambio
+├── de       -- Moneda origen ('CRC' o 'USD')
+├── a        -- Moneda destino ('USD' o 'CRC')
+├── tasa     -- Valor del tipo de cambio
+└── fuente   -- 'BCCR WS'
 ```
 
-### Variables de entorno
-- Usa `.env.example` como plantilla. Hay un archivo ` .env.local` en el repositorio de ejemplo para desarrollo local.
-- Antes de ejecutar, copia y edita:
-```bash
-cd etl
-cp .env.example .env.local
-# editar .env con tus credenciales/URLs
+### Jobs Disponibles
+- `jobs.sp_BCCR_CargarTiposCambio`: Carga tipos de cambio para un rango de fechas
+- `jobs.sp_BCCR_CargarHoy`: Carga el tipo de cambio del día actual
+- `jobs.sp_BCCR_CheckStatus`: Verifica el estado de la carga
+- Job de SQL Server Agent `BCCR_TipoCambio_Diario`: Ejecuta automáticamente a las 5:00 AM
+
+### Sincronización con DimTiempo
+Durante la carga del DW, los tipos de cambio se sincronizan automáticamente desde `stg.tipo_cambio` a las columnas `TC_CRC_USD` y `TC_USD_CRC` en `DimTiempo`.
+
+## Reglas de Asociación (Apriori)
+
+Después de cargar el DW, el ETL ejecuta el algoritmo FP-Growth para descubrir patrones de compra:
+
 ```
+┌─────────────────────────────────────────────────────────────────┐
+│                    association_rules/                           │
+│  ├── get_rules.py     - Ejecuta FP-Growth sobre FactVentas     │
+│  └── load_rules.py    - Carga reglas a analytics.AssociationRules │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Las reglas generadas se almacenan en `analytics.AssociationRules` y son consumidas por las aplicaciones web para mostrar recomendaciones de productos.
 
 ## Ejecución
 
-### Ejecutar ETL completo
+### ETL Completo
 ```bash
-cd etl
 uv run python main.py
 ```
 
-Esto ejecutará:
-1. Extracción de todas las fuentes implementadas (MongoDB, MS SQL Server)
-2. Transformación y carga a staging
-3. Carga al Data Warehouse (dimensiones y hechos)
-
-### Ejecutar ETL filtrado por fuentes
-Puedes limitar el proceso a una o varias bases usando `--db` (se puede repetir o pasar valores separados por coma). Ejemplos:
-
+### Filtrar por Fuentes
 ```bash
 # Solo MS SQL Server
 uv run python main.py --db mssql
@@ -73,130 +289,136 @@ uv run python main.py --db mssql
 # MySQL + Supabase
 uv run python main.py --db mysql,supabase
 
-# Todas las fuentes disponibles
+# Todas las fuentes
 uv run python main.py --db all
 ```
 
-Si no se especifica `--db`, se procesan MS SQL Server, MySQL y Supabase por defecto.
-
-### Testing de ETL específico
-
-**MS SQL Server:**
+### Modo Debug
 ```bash
-# Test completo
-python test_mssql_etl.py
-
-# Test de conexiones solamente
-python test_mssql_etl.py --step connections
-
-# Test de extracción solamente
-python test_mssql_etl.py --step extract
-
-# Resetear staging antes de ejecutar
-python test_mssql_etl.py --reset
+# Ver información detallada sobre el mapeo de productos
+uv run python main.py --log-level debug
 ```
 
-## Estructura del proyecto 
-```bash
+### Salida Típica
+```
+ETL - Sources: mssql, mysql, supabase, mongo, neo4j
+
+[1] Exchange rates
+    1095 records OK
+
+[2] Extraction
+    mssql: 600 clients | 450 products | 5000 orders | 12500 details
+    mysql: 600 clients | 425 products | 5000 orders | 12000 details
+    supab: 600 clients | 375 products | 5000 orders | 11500 details
+    mongo: 600 clients | 350 products | 5000 orders
+    neo4j: 600 clients | 400 products | 5000 orders
+
+[3] Building product equivalences
+    500 unique products across all sources
+    SKU sources: MSSQL=450, Supabase=20, Mongo=15, Neo4j=10, Generated=5
+
+[4] Transformation
+    mssql: 600 clients | 450 products | 12500 items
+    mysql: 600 clients | 425 products | 12000 items
+    supab: 600 clients | 375 products | 11500 items
+    mongo: 600 clients | 350 products | 11000 items
+    neo4j: 600 clients | 400 products | 10500 items
+
+[5] Load to Data Warehouse
+    DimTiempo: up to date
+    DimCliente: 3000 loaded
+    DimProducto: 500 loaded
+    FactVentas: 57500 loaded
+
+[6] Association Rules (Apriori/FP-Growth)
+    Generated 150 rules with min_support=0.01, min_confidence=0.3
+
+ETL completed successfully
+```
+
+## Estructura del Proyecto
+
+```
 etl/
-├─ configs/
-│  └─ connections.py          # Configuración de conexiones a bases de datos
-├─ extract/
-│  ├─ mongo.py                # Extracción de MongoDB
-│  ├─ mssql.py                # Extracción de MS SQL Server
-│  ├─ mysql.py                # Extracción de MySQL
-│  └─ supabase.py             # Extracción de Supabase/PostgreSQL
-├─ load/
-│  └─ general.py              # Carga al Data Warehouse
-├─ transform/
-│  ├─ mongo.py                # Transformación de datos de MongoDB
-│  ├─ mssql.py                # Transformación de datos de MS SQL Server
-│  ├─ mysql.py                # Transformación de datos de MySQL
-│  └─ supabase.py             # Transformación de datos de Supabase
-├─ .env.example               # Template de variables de entorno
-├─ .env.local                 # Variables de entorno locales (no versionado)
-├─ main.py                    # Script principal ETL
-├─ test_mssql_etl.py          # Testing del ETL de MS SQL Server
-├─ README.md                  # Este archivo
-├─ README_MSSQL_ETL.md        # Documentación detallada del ETL de MS SQL Server
-└─ pyproject.toml             # Dependencias del proyecto
+├── configs/
+│   └── connections.py           # Configuración de conexiones a BD
+├── extract/
+│   ├── mongo.py                 # Extracción de MongoDB
+│   ├── mssql.py                 # Extracción de MS SQL Server
+│   ├── mysql.py                 # Extracción de MySQL
+│   ├── neo4j.py                 # Extracción de Neo4j
+│   └── supabase.py              # Extracción de Supabase/PostgreSQL
+├── equivalences.py              # ⭐ Construcción del mapa de equivalencias
+├── transform/
+│   ├── mongo.py                 # Transformación MongoDB → Staging
+│   ├── mssql.py                 # Transformación MSSQL → Staging
+│   ├── mysql.py                 # Transformación MySQL → Staging
+│   ├── neo4j.py                 # Transformación Neo4j → Staging
+│   └── supabase.py              # Transformación Supabase → Staging
+├── load/
+│   └── general.py               # Carga Staging → Data Warehouse
+├── association_rules/
+│   ├── get_rules.py             # Generación de reglas con FP-Growth
+│   └── load_rules.py            # Carga de reglas a analytics.*
+├── main.py                      # Script principal del ETL
+├── pyproject.toml               # Dependencias del proyecto
+└── README.md                    # Este archivo
 ```
 
-## Variables de Entorno
+## Modelo del Data Warehouse
 
-Copiar `.env.example` a `.env.local` y configurar:
+### Dimensiones
 
-```env
-# Data Warehouse (MS SQL Server)
-MSSQL_DW_HOST=localhost
-MSSQL_DW_PORT=1433
-MSSQL_DW_USER=sa
-MSSQL_DW_PASS=YourPassword123!
-MSSQL_DW_DB=DW_SALES
-
-# MS SQL Server - DB_SALES (fuente transaccional)
-MSSQL_SALES_HOST=localhost
-MSSQL_SALES_PORT=1433
-MSSQL_SALES_USER=sa
-MSSQL_SALES_PASS=YourPassword123!
-MSSQL_SALES_DB=DB_SALES
-
-# MySQL - DB_SALES (fuente transaccional)
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASS=YourPassword123!
-MYSQL_DB=DB_SALES
-
-# MongoDB
-MONGO_URI=mongodb://localhost:27017
-MONGO_DB=sales_mongo
-
-# BCCR WebService (tipos de cambio)
-BCCR_TOKEN=your-token-here
-BCCR_EMAIL=your-email@example.com
-BCCR_NOMBRE=Your Name
+**DimCliente**
+```sql
+├── ClienteID (PK, IDENTITY)
+├── SourceSystem        -- Fuente origen
+├── SourceKey           -- ID original en la fuente
+├── Email, Nombre, Genero, Pais
+├── FechaCreacionID     -- FK a DimTiempo
+└── LoadTS              -- Timestamp de carga
 ```
 
-## Tipos de Cambio (BCCR)
-
-El sistema incluye integración con el WebService del BCCR para tipos de cambio:
-
-### Carga Automática
-- Al iniciar el ETL se verifica si existen tipos de cambio en `stg.tipo_cambio`
-- Si no hay datos, se muestra una advertencia para que ejecutes el job SQL correspondiente
-
-### Jobs en SQL Server
-El script `40_bccr_jobs.sql` crea Stored Procedures en la BD:
-- `jobs.sp_BCCR_SaveExchangeRate`: Guarda un tipo de cambio individual
-- `jobs.sp_BCCR_SaveExchangeRateBatch`: Guarda múltiples tipos de cambio
-- `jobs.sp_BCCR_GetMissingDates`: Obtiene fechas sin tipo de cambio
-- `jobs.sp_BCCR_CheckStatus`: Verifica el estado de la carga
-- `jobs.sp_BCCR_CargarTiposCambio`: Consume el WebService del BCCR para un rango de fechas
-- Job de SQL Server Agent `BCCR_TipoCambio_Diario`: ejecuta `jobs.sp_BCCR_CargarHoy` a las 5:00 a.m.
-
-### Ejecución Manual
-Desde cualquier terminal con `sqlcmd` configurado:
-
-```bash
-# Cargar histórico (ajusta el rango según lo necesites)
-sqlcmd -C -S <host>,<puerto> -U sa -P "<pass>" \
-	-Q "EXEC DW_SALES.jobs.sp_BCCR_CargarTiposCambio @FechaInicio='2015-01-01', @FechaFinal=GETDATE();"
-
-# Ejecutar la carga del día manualmente
-sqlcmd -C -S <host>,<puerto> -U sa -P "<pass>" -Q "EXEC DW_SALES.jobs.sp_BCCR_CargarHoy;"
-
-# Verificar estado
-sqlcmd -C -S <host>,<puerto> -U sa -P "<pass>" -Q "EXEC DW_SALES.jobs.sp_BCCR_CheckStatus;"
+**DimProducto**
+```sql
+├── ProductoID (PK, IDENTITY)
+├── SKU                 -- Código único canónico
+├── Nombre, Categoria
+├── EsServicio          -- TRUE si no tiene SKU físico
+├── SourceSystem, SourceKey
+└── LoadTS
 ```
 
-### Configuración del Job Diario
-Para programar la actualización diaria a las 5:00 AM:
-1. **SQL Server Agent**: El script ya crea el job `BCCR_TipoCambio_Diario`
-2. Si no tienes SQL Server Agent, ejecuta `jobs.sp_BCCR_CargarHoy` manualmente o configura tu propio programador externo que invoque el stored procedure
+**DimTiempo**
+```sql
+├── TiempoID (PK)       -- Formato YYYYMMDD
+├── Fecha, Anio, Mes, Dia
+├── TC_CRC_USD          -- Tipo de cambio CRC→USD
+├── TC_USD_CRC          -- Tipo de cambio USD→CRC
+└── LoadTS
+```
+
+### Tabla de Hechos
+
+**FactVentas**
+```sql
+├── VentaID (PK, IDENTITY)
+├── TiempoID (FK)       -- Fecha de la venta
+├── ClienteID (FK)      -- Cliente que compró
+├── ProductoID (FK)     -- Producto vendido
+├── Canal, Fuente       -- Canal de venta y sistema origen
+├── Cantidad            -- Unidades vendidas
+├── PrecioUnitUSD       -- Precio unitario en USD
+├── TotalUSD            -- Total de la línea en USD
+├── MonedaOriginal      -- 'USD' o 'CRC'
+├── PrecioUnitOriginal  -- Precio en moneda original
+├── TotalOriginal       -- Total en moneda original
+├── SourceKey           -- ID compuesto para deduplicación
+└── LoadTS
+```
 
 ## Documentación Adicional
 
-- **ETL MS SQL Server**: Ver `README_MSSQL_ETL.md` para documentación detallada
-- **Instrucciones del proyecto**: Ver `../Instrucciones.md` en la raíz del proyecto
-- **Esquemas de bases de datos**: Ver `../infra/docker/databases/`
+- **Instrucciones del proyecto**: `../Instrucciones.md`
+- **Esquemas de bases de datos**: `../infra/docker/databases/`
+- **Generación de datos de prueba**: `../data/README.md`
