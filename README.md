@@ -10,7 +10,7 @@ Escuela de Ingeniería en Computación
 
 ## Integrantes
 
-- <REMOVED_BCCR_NAME>
+- Mauricio González Prendas
 - Susana Feng Liu
 - Ximena Molina Portilla
 - Aarón Vásquez Báñez
