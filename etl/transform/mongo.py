@@ -1,31 +1,97 @@
 import pandas as pd
 from bson import ObjectId
+from typing import TYPE_CHECKING
+
 from sqlalchemy import text
 
 from configs.connections import get_dw_engine, get_mongo_database
+
+if TYPE_CHECKING:
+    from equivalences import EquivalenceMap
 
 db = get_mongo_database()
 products_collection = db["productos"]
 
 engine = get_dw_engine()
 
-# Query to find SKU from map_producto by source_code
+# Query to find SKU from map_producto by source_code (for mongo source)
 query_find_sku_by_source_code = """
     SELECT TOP 1 sku_oficial
     FROM stg.map_producto
     WHERE source_system = :source_system AND source_code = :source_code
 """
 
+# Query to find existing SKU by matching SKU value (for equivalencias.sku)
+query_find_sku_by_sku = """
+    SELECT TOP 1 sku_oficial
+    FROM stg.map_producto
+    WHERE sku_oficial = :sku
+      AND sku_oficial IS NOT NULL
+      AND sku_oficial != ''
+"""
+
+# Query to find SKU by name and category (case-insensitive, priority to mssql)
+query_find_sku_by_name_category = """
+    SELECT TOP 1 sku_oficial
+    FROM stg.map_producto
+    WHERE LOWER(nombre_norm) = LOWER(:nombre_norm)
+      AND LOWER(categoria_norm) = LOWER(:categoria_norm)
+      AND sku_oficial IS NOT NULL
+      AND sku_oficial != ''
+    ORDER BY
+        CASE source_system
+            WHEN 'mssql' THEN 1
+            WHEN 'supabase' THEN 2
+            ELSE 3
+        END,
+        map_id DESC
+"""
+
 
 def find_sku_from_map_producto(codigo_mongo: str) -> str | None:
     """
-    Find SKU from map_producto table.
-    Neo4j populates equivalences for all sources, so MongoDB can find its SKU here.
+    Find SKU from map_producto table by source_code.
+    Used as first attempt for previously registered products.
     """
     with engine.connect() as conn:
         result = conn.execute(
             text(query_find_sku_by_source_code),
             {"source_system": "mongo", "source_code": codigo_mongo}
+        )
+        row = result.fetchone()
+        if row:
+            return row[0]
+    return None
+
+
+def find_sku_by_sku_value(sku: str) -> str | None:
+    """
+    Find if a SKU already exists in map_producto.
+    MongoDB has equivalencias.sku which may contain the canonical SKU.
+    """
+    if not sku:
+        return None
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(query_find_sku_by_sku),
+            {"sku": sku}
+        )
+        row = result.fetchone()
+        if row:
+            return row[0]
+    return None
+
+
+def find_sku_by_name_category(nombre: str, categoria: str) -> str | None:
+    """
+    Find SKU from map_producto by matching name and category.
+    Prioritizes MSSQL (canonical source) and Supabase (uses SKU directly).
+    This is the fallback when no direct code mapping exists.
+    """
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(query_find_sku_by_name_category),
+            {"nombre_norm": nombre, "categoria_norm": categoria}
         )
         row = result.fetchone()
         if row:
@@ -152,38 +218,64 @@ def find_sku():
     return sku
 
 
-def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
+def insert_map_producto(codigo_original, sku_equivalencias, nombre, categoria, eq_map: "EquivalenceMap" = None):
     """
     Inserta un producto en la tabla stg.map_producto.
     
-    MongoDB tiene el campo equivalencias.sku, pero si está vacío,
-    buscamos en map_producto (poblado por Neo4j) usando codigo_mongo.
+    Uses the equivalence map (built from ALL sources) to get the correct SKU.
+    
+    Args:
+        codigo_original: codigo_mongo del producto
+        sku_equivalencias: equivalencias.sku del documento (puede estar vacío)
+        nombre: nombre del producto
+        categoria: categoria del producto
+        eq_map: Mapa de equivalencias de productos
     """
-    # Si no tiene SKU del campo equivalencias, buscar en map_producto
-    if not sku_nueva:
-        # Try to find SKU from map_producto (populated by Neo4j)
-        if codigo_original:
-            sku_from_map = find_sku_from_map_producto(codigo_original)
-            if sku_from_map:
-                sku_nueva = sku_from_map
-            else:
-                # Fallback: generate new SKU
-                sku_nueva = find_sku()
+    sku_oficial = None
+    
+    # Use equivalence map (preferred - has info from all sources)
+    if eq_map:
+        sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
+    
+    # Fallback: Si tiene equivalencias.sku, verificar que sea válido
+    if not sku_oficial and sku_equivalencias:
+        sku_norm = sku_equivalencias
+        if sku_norm.upper().startswith("SKU") and "-" not in sku_norm:
+            sku_norm = f"SKU-{sku_norm[3:]}"
+        
+        existing = find_sku_by_sku_value(sku_norm)
+        if existing:
+            sku_oficial = existing
         else:
-            sku_nueva = find_sku()
+            sku_oficial = sku_norm
+    
+    # Fallback: Buscar por source_code (codigo_mongo) en registros previos
+    if not sku_oficial and codigo_original:
+        sku_from_map = find_sku_from_map_producto(codigo_original)
+        if sku_from_map:
+            sku_oficial = sku_from_map
+    
+    # Fallback: Buscar por nombre+categoria en DB
+    if not sku_oficial:
+        sku_by_name = find_sku_by_name_category(nombre, categoria)
+        if sku_by_name:
+            sku_oficial = sku_by_name
+    
+    # Last resort: generate new SKU
+    if not sku_oficial:
+        sku_oficial = find_sku()
     
     # Ensure source_code is never empty
     if not codigo_original:
         codigo_original = "Sin código"
 
-    # MERGE ensures we don't duplicate if Neo4j already inserted this entry
     with engine.connect() as conn:
         conn.execute(
             text(query_insert_map_producto),
             {
                 "source_system": "mongo",
                 "source_code": codigo_original,
-                "sku_oficial": sku_nueva,
+                "sku_oficial": sku_oficial,
                 "nombre_norm": nombre,
                 "categoria_norm": categoria,
                 "es_servicio": False,
@@ -380,16 +472,22 @@ def insert_clientes_stg(clientes):
     ----------------------------------------------------------------------- """
 
 
-def transform_mongo(productos, clientes, ordenes):
+def transform_mongo(productos, clientes, ordenes, eq_map: "EquivalenceMap" = None):
     """
     Transforma y carga datos de MongoDB a staging.
+    
+    Args:
+        productos: Lista de productos extraídos
+        clientes: Lista de clientes extraídos
+        ordenes: Lista de órdenes extraídas
+        eq_map: Mapa de equivalencias de productos (construido previamente)
     """
     total_productos = len(productos)
 
     # 1. Process clients
     clientes_procesados, clientes_errores = insert_clientes_stg(clientes)
 
-    # 2. Process products and create mapping table
+    # 2. Process products - using equivalence map for SKU resolution
     productos_procesados = 0
     productos_errores = 0
     for producto in productos:
@@ -399,7 +497,7 @@ def transform_mongo(productos, clientes, ordenes):
             nombre = producto.get("nombre")
             categoria = producto.get("categoria")
 
-            insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
+            insert_map_producto(codigo_original, sku_nueva, nombre, categoria, eq_map)
             productos_procesados += 1
         except Exception:
             productos_errores += 1

@@ -1,9 +1,13 @@
 import pandas as pd
 import pycountry
+from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 from configs.connections import get_dw_engine, get_supabase_client
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from equivalences import EquivalenceMap
 
 engine = get_dw_engine()
 supabase = get_supabase_client()
@@ -57,17 +61,32 @@ query_select_map_producto_sku = """
     FROM stg.map_producto;
 """
 
-# Para obtener sku de producto que coincida por nombre y categoria
+# Query to find SKU by name and category (case-insensitive, priority to mssql)
 query_select_map_producto_sku_exist = """
     SELECT TOP 1
         sku_oficial AS SKU
     FROM
         stg.map_producto AS target
     WHERE
-        target.nombre_norm = :nombre_norm
-        AND target.categoria_norm = :categoria_norm
+        LOWER(target.nombre_norm) = LOWER(:nombre_norm)
+        AND LOWER(target.categoria_norm) = LOWER(:categoria_norm)
+        AND target.sku_oficial IS NOT NULL
+        AND target.sku_oficial != ''
     ORDER BY
+        CASE target.source_system
+            WHEN 'mssql' THEN 1
+            ELSE 2
+        END,
         target.map_id DESC;
+"""
+
+# Query to verify if a SKU exists in map_producto
+query_find_sku_exists = """
+    SELECT TOP 1 sku_oficial
+    FROM stg.map_producto
+    WHERE sku_oficial = :sku
+      AND sku_oficial IS NOT NULL
+      AND sku_oficial != ''
 """
 
 query_insert_orden_item_stg = """
@@ -183,6 +202,10 @@ Devuelve el sku_oficial si existe; de lo contrario, devuelve string vacío "".
 
 
 def obtener_sku_existente(nombre_norm, categoria_norm):
+    """
+    Find existing SKU by name+category match.
+    Prioritizes MSSQL (canonical source) over other sources.
+    """
     try:
         engine = get_dw_engine()
 
@@ -200,6 +223,28 @@ def obtener_sku_existente(nombre_norm, categoria_norm):
 
     except Exception:
         return ""  # fallback seguro
+
+
+def verificar_sku_existe(sku: str) -> str | None:
+    """
+    Verify if a SKU already exists in map_producto.
+    Returns the SKU if found, None otherwise.
+    """
+    if not sku:
+        return None
+    try:
+        engine = get_dw_engine()
+        with engine.connect() as conn:
+            result = conn.execute(
+                text(query_find_sku_exists),
+                {"sku": sku}
+            )
+            row = result.fetchone()
+            if row:
+                return row[0]
+    except Exception:
+        pass
+    return None
 
 
 def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
@@ -241,23 +286,64 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
         return False
 
 
-def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
-    # SKU puede estar vacío, obtener uno existente si es así
+def insert_map_producto(producto_id, codigo_original, sku_nueva, nombre, categoria, eq_map: "EquivalenceMap" = None):
+    """
+    Inserta producto en map_producto.
+    
+    Uses the equivalence map (built from ALL sources) to get the correct SKU.
+    
+    Args:
+        producto_id: UUID del producto en Supabase (usado como fallback source_code)
+        codigo_original: SKU original de Supabase (puede ser None/vacío)
+        sku_nueva: SKU procesado (puede estar vacío)
+        nombre: Nombre del producto
+        categoria: Categoría del producto
+        eq_map: Mapa de equivalencias de productos
+    """
     es_servicio = False
-    if not sku_nueva:
-        es_servicio = True
-        sku_nueva = ""
-    # Ensure source_code is never empty (must match source_code_prod in orden_items)
-    if not codigo_original:
-        codigo_original = "Sin código"
+    sku_oficial = None
+    
+    # Use equivalence map (preferred - has info from all sources)
+    if eq_map:
+        sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
+        if sku_oficial:
+            # Check if it's a service from the equivalence map
+            eq = eq_map.get_equivalence(nombre, categoria)
+            if eq and eq.es_servicio:
+                es_servicio = True
+    
+    # Fallback: Si tiene SKU, verificar formato y existencia
+    if not sku_oficial and sku_nueva:
+        existing = verificar_sku_existe(sku_nueva)
+        if existing:
+            sku_oficial = existing
+        elif sku_nueva.startswith("SKU-"):
+            sku_oficial = sku_nueva
+    
+    # Fallback: Buscar por nombre+categoria en DB
+    if not sku_oficial:
+        sku_existente = obtener_sku_existente(nombre, categoria)
+        if sku_existente:
+            sku_oficial = sku_existente
+    
+    # Last resort: Generate new SKU
+    if not sku_oficial:
+        es_servicio = not bool(codigo_original)  # Service if no original SKU
+        sku_oficial = find_sku()
+    
+    # Use producto_id as source_code if no SKU original
+    if codigo_original:
+        source_code = codigo_original
+    else:
+        source_code = str(producto_id) if producto_id else "Sin código"
 
     with engine.connect() as conn:
         conn.execute(
             text(query_insert_map_producto),
             {
                 "source_system": "supabase",
-                "source_code": codigo_original,
-                "sku_oficial": sku_nueva,
+                "source_code": source_code,
+                "sku_oficial": sku_oficial,
                 "nombre_norm": nombre,
                 "categoria_norm": categoria,
                 "es_servicio": es_servicio,
@@ -313,7 +399,7 @@ def convertir_sku(sku: str) -> str:
     ----------------------------------------------------------------------- """
 
 
-def transform_supabase(clientes, productos, ordenes, orden_detalles):
+def transform_supabase(clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None):
     """
     Transforma y carga datos de Supabase a staging.
 
@@ -322,6 +408,7 @@ def transform_supabase(clientes, productos, ordenes, orden_detalles):
         productos: Lista de productos extraídos
         ordenes: Lista de órdenes extraídas
         orden_detalles: Lista de detalles de órdenes extraídos
+        eq_map: Mapa de equivalencias de productos (construido previamente)
     """
     total_productos = len(productos)
 
@@ -330,8 +417,7 @@ def transform_supabase(clientes, productos, ordenes, orden_detalles):
         clientes, 0, 0
     )
 
-    # 2. Transform and load products to mapping table
-    # Also build productos_dict for efficient lookup
+    # 2. Transform and load products to mapping table - using equivalence map
     productos_dict = {}
     productos_procesados = 0
     productos_errores = 0
@@ -343,32 +429,13 @@ def transform_supabase(clientes, productos, ordenes, orden_detalles):
             categoria = producto.get("categoria")
 
             # Store in dict for later lookup
-            productos_dict[producto_id] = codigo_original or ""
+            productos_dict[producto_id] = codigo_original or str(producto_id)
 
-            if codigo_original:
-                # Supabase uses SKU directly (like MSSQL)
-                # If it looks like a valid SKU (SKU-XXXX format), use it directly
-                normalized_sku = convertir_sku(codigo_original)
-                if normalized_sku.startswith("SKU-"):
-                    # Valid SKU format - use directly, don't generate new one
-                    sku_nueva = normalized_sku
-                else:
-                    # Non-standard format - try to find existing by name/category
-                    sku_existente = obtener_sku_existente(nombre, categoria)
-                    if sku_existente:
-                        sku_nueva = sku_existente
-                    else:
-                        sku_nueva = find_sku()
-            else:
-                # No SKU provided - try to find by name/category from Neo4j
-                sku_existente = obtener_sku_existente(nombre, categoria)
-                if sku_existente:
-                    sku_nueva = sku_existente
-                else:
-                    # This is a service or product only in Supabase
-                    sku_nueva = ""
+            # Normalize SKU if provided
+            sku_normalizado = convertir_sku(codigo_original) if codigo_original else ""
 
-            insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
+            # Use equivalence map for SKU resolution
+            insert_map_producto(producto_id, codigo_original, sku_normalizado, nombre, categoria, eq_map)
             productos_procesados += 1
         except Exception:
             productos_errores += 1

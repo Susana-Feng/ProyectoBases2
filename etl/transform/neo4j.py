@@ -1,9 +1,13 @@
 import pandas as pd
 import pycountry
+from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 from configs.connections import get_dw_engine, get_neo4j_driver
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from equivalences import EquivalenceMap
 
 engine = get_dw_engine()
 driver = get_neo4j_driver()
@@ -57,17 +61,33 @@ query_select_map_producto_sku = """
     FROM stg.map_producto;
 """
 
-# Para obtener sku de producto que coincida por nombre y categoria
+# Query to find SKU by name and category (case-insensitive, priority to mssql)
 query_select_map_producto_sku_exist = """
     SELECT TOP 1
         sku_oficial AS SKU
     FROM
         stg.map_producto AS target
     WHERE
-        target.nombre_norm = :nombre_norm
-        AND target.categoria_norm = :categoria_norm
+        LOWER(target.nombre_norm) = LOWER(:nombre_norm)
+        AND LOWER(target.categoria_norm) = LOWER(:categoria_norm)
+        AND target.sku_oficial IS NOT NULL
+        AND target.sku_oficial != ''
     ORDER BY
+        CASE target.source_system
+            WHEN 'mssql' THEN 1
+            WHEN 'supabase' THEN 2
+            ELSE 3
+        END,
         target.map_id DESC;
+"""
+
+# Query to verify if a SKU already exists in map_producto
+query_find_sku_exists = """
+    SELECT TOP 1 sku_oficial
+    FROM stg.map_producto
+    WHERE sku_oficial = :sku
+      AND sku_oficial IS NOT NULL
+      AND sku_oficial != ''
 """
 
 query_insert_orden_item_stg = """
@@ -265,62 +285,83 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
         conn.commit()
 
 
-def insert_all_equivalencias(producto: dict, sku_oficial: str, nombre: str, categoria: str):
+def verificar_sku_existe(sku: str) -> str | None:
     """
-    Neo4j tiene todos los códigos (sku, codigo_alt, codigo_mongo).
-    Esta función registra las equivalencias para TODAS las fuentes,
-    permitiendo que MySQL y MongoDB encuentren el SKU correcto.
+    Verify if a SKU already exists in map_producto.
+    Returns the SKU if found, None otherwise.
+    """
+    if not sku:
+        return None
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(query_find_sku_exists),
+            {"sku": sku}
+        )
+        row = result.fetchone()
+        if row:
+            return row[0]
+    return None
+
+
+def insert_producto_neo4j(producto: dict, nombre: str, categoria: str, eq_map: "EquivalenceMap" = None):
+    """
+    Inserta un producto de Neo4j en map_producto.
     
-    Según instrucciones: "Múltiples códigos por producto (propiedades sku, codigo_alt, codigo_mongo)"
+    Uses the equivalence map (built from ALL sources) to get the correct SKU.
+    
+    Args:
+        producto: Dict con datos del producto (sku, codigo_alt, codigo_mongo, nombre, categoria)
+        nombre: Nombre del producto
+        categoria: Categoría del producto
+        eq_map: Mapa de equivalencias de productos
+    
+    Returns:
+        str: SKU oficial asignado
     """
     sku = producto.get("sku")
-    codigo_alt = producto.get("codigo_alt")
-    codigo_mongo = producto.get("codigo_mongo")
+    sku_oficial = None
+    
+    # Use equivalence map (preferred - has info from all sources)
+    if eq_map:
+        sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
+    
+    # Fallback: Si tiene SKU, verificar formato y existencia
+    if not sku_oficial and sku:
+        sku_norm = convertir_sku(sku)
+        existing = verificar_sku_existe(sku_norm)
+        if existing:
+            sku_oficial = existing
+        elif sku_norm.startswith("SKU-"):
+            sku_oficial = sku_norm
+    
+    # Fallback: Buscar por nombre+categoria en DB
+    if not sku_oficial:
+        sku_existente = obtener_sku_existente(nombre, categoria)
+        if sku_existente:
+            sku_oficial = sku_existente
+    
+    # Last resort: generate new SKU
+    if not sku_oficial:
+        sku_oficial = find_sku()
+    
+    # Use SKU as source_code for Neo4j
+    source_code = sku if sku else "Sin código"
     
     with engine.connect() as conn:
-        # 1. Registro para Neo4j (usa SKU como source_code)
-        if sku:
-            conn.execute(
-                text(query_insert_map_producto),
-                {
-                    "source_system": "neo4j",
-                    "source_code": sku,
-                    "sku_oficial": sku_oficial,
-                    "nombre_norm": nombre,
-                    "categoria_norm": categoria,
-                    "es_servicio": False,
-                },
-            )
-        
-        # 2. Registro para MySQL (usa codigo_alt como source_code)
-        if codigo_alt:
-            conn.execute(
-                text(query_insert_map_producto),
-                {
-                    "source_system": "mysql",
-                    "source_code": codigo_alt,
-                    "sku_oficial": sku_oficial,
-                    "nombre_norm": nombre,
-                    "categoria_norm": categoria,
-                    "es_servicio": False,
-                },
-            )
-        
-        # 3. Registro para MongoDB (usa codigo_mongo como source_code)
-        if codigo_mongo:
-            conn.execute(
-                text(query_insert_map_producto),
-                {
-                    "source_system": "mongo",
-                    "source_code": codigo_mongo,
-                    "sku_oficial": sku_oficial,
-                    "nombre_norm": nombre,
-                    "categoria_norm": categoria,
-                    "es_servicio": False,
-                },
-            )
-        
+        conn.execute(
+            text(query_insert_map_producto),
+            {
+                "source_system": "neo4j",
+                "source_code": source_code,
+                "sku_oficial": sku_oficial,
+                "nombre_norm": nombre,
+                "categoria_norm": categoria,
+                "es_servicio": False,
+            },
+        )
         conn.commit()
+    
+    return sku_oficial
 
 
 def unir_relaciones_por_orden(rel_realizo, rel_contiente):
@@ -497,9 +538,11 @@ def insert_clientes_stg(clientes):
         for cliente in clientes:
             source_code = str(cliente.get("id"))
 
-            # Validar y convertir fecha de creación
-            fecha_creado_dt = datetime.now().date()
-            fecha_creado_raw_str = fecha_creado_dt.isoformat()
+            # Neo4j nodes don't have creation date in the generated data.
+            # Use a fixed date within the order date range (mid-point of ~2 years of data)
+            # This ensures DimTiempo has this date for the FK relationship.
+            fecha_creado_dt = datetime(2024, 6, 1).date()
+            fecha_creado_raw_str = "2024-06-01"
 
             # Validar género
             genero_raw = cliente.get("genero")
@@ -572,43 +615,32 @@ def convertir_sku(sku: str) -> str:
     ----------------------------------------------------------------------- """
 
 
-def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene):
+def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene, eq_map: "EquivalenceMap" = None):
     """
     Transforma y carga datos de Neo4j a staging.
     
-    IMPORTANTE: Neo4j es la fuente maestra de equivalencias porque tiene
-    todos los códigos de producto (sku, codigo_alt, codigo_mongo).
-    Por eso registra las equivalencias para TODAS las fuentes (mysql, mongo).
+    Args:
+        productos: Lista de productos extraídos
+        clientes: Lista de clientes extraídos
+        rel_realizo: Lista de relaciones REALIZO
+        rel_contiene: Lista de relaciones CONTIENE
+        eq_map: Mapa de equivalencias de productos (construido previamente)
     """
     total_productos = len(productos)
 
     # 1. Process clients
     clientes_procesados, clientes_errores = insert_clientes_stg(clientes)
 
-    # 2. Process products and create mapping table for ALL sources
-    # Neo4j has all product codes, so it populates equivalences for mysql and mongo too
+    # 2. Process products - using equivalence map for SKU resolution
     productos_procesados = 0
     productos_errores = 0
     for producto in productos:
         try:
-            sku = producto.get("sku")
             nombre = producto.get("nombre")
             categoria = producto.get("categoria")
             
-            # Determine the canonical SKU
-            if sku:
-                sku_oficial = convertir_sku(sku)
-            else:
-                # Product without SKU - try to find existing or generate new
-                sku_existente = obtener_sku_existente(nombre, categoria)
-                if sku_existente:
-                    sku_oficial = sku_existente
-                else:
-                    sku_oficial = find_sku()
-            
-            # Register equivalences for ALL sources (neo4j, mysql, mongo)
-            # This allows other sources to find the canonical SKU
-            insert_all_equivalencias(producto, sku_oficial, nombre, categoria)
+            # Use equivalence map for SKU resolution
+            insert_producto_neo4j(producto, nombre, categoria, eq_map)
             productos_procesados += 1
         except Exception:
             productos_errores += 1

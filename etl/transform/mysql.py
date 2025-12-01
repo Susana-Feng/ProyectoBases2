@@ -12,34 +12,74 @@ Heterogeneidades de MySQL:
 
 NOTA: Se utilizan sentencias MERGE para garantizar idempotencia del ETL.
       Si se ejecuta varias veces, no duplicará datos.
+
+SKU Resolution: Uses the equivalence map built from all sources.
 """
 
 from datetime import datetime
 import re
+from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
 from configs.connections import get_dw_engine
 
+if TYPE_CHECKING:
+    from equivalences import EquivalenceMap
+
 engine = get_dw_engine()
 
-# Query to find SKU from map_producto by source_code
+# Query to find SKU from map_producto by source_code (for mysql source)
 query_find_sku_by_source_code = """
     SELECT TOP 1 sku_oficial
     FROM stg.map_producto
     WHERE source_system = :source_system AND source_code = :source_code
 """
 
+# Query to find SKU by name and category (case-insensitive, priority to mssql)
+query_find_sku_by_name_category = """
+    SELECT TOP 1 sku_oficial
+    FROM stg.map_producto
+    WHERE LOWER(nombre_norm) = LOWER(:nombre_norm)
+      AND LOWER(categoria_norm) = LOWER(:categoria_norm)
+      AND sku_oficial IS NOT NULL
+      AND sku_oficial != ''
+    ORDER BY
+        CASE source_system
+            WHEN 'mssql' THEN 1
+            WHEN 'supabase' THEN 2
+            ELSE 3
+        END,
+        map_id DESC
+"""
+
 
 def find_sku_from_map_producto(source_code: str) -> str | None:
     """
-    Find SKU from map_producto table.
-    Neo4j populates equivalences for all sources, so MySQL can find its SKU here.
+    Find SKU from map_producto table by source_code.
+    Used as first attempt before falling back to name+category match.
     """
     with engine.connect() as conn:
         result = conn.execute(
             text(query_find_sku_by_source_code),
             {"source_system": "mysql", "source_code": source_code}
+        )
+        row = result.fetchone()
+        if row:
+            return row[0]
+    return None
+
+
+def find_sku_by_name_category(nombre: str, categoria: str) -> str | None:
+    """
+    Find SKU from map_producto by matching name and category.
+    Prioritizes MSSQL (canonical source) and Supabase (uses SKU directly).
+    This is the fallback when no direct code mapping exists.
+    """
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(query_find_sku_by_name_category),
+            {"nombre_norm": nombre, "categoria_norm": categoria}
         )
         row = result.fetchone()
         if row:
@@ -355,14 +395,17 @@ def insert_map_producto(producto, sku_mapping):
     return result
 
 
-def insert_map_producto_batch(conn, producto, sku_mapping):
+def insert_map_producto_batch(conn, producto, sku_mapping, eq_map: "EquivalenceMap" = None):
     """
     Batch version: Inserta un producto usando conexión existente (no commit).
+    
+    Uses the equivalence map (built from ALL sources) to get the correct SKU.
     
     Args:
         conn: Conexión activa de SQLAlchemy
         producto: Row con datos del producto
-        sku_mapping: Dict para rastrear SKUs asignados
+        sku_mapping: Dict para rastrear SKUs asignados (cache local)
+        eq_map: Mapa de equivalencias de productos
 
     Returns:
         str: SKU asignado al producto
@@ -376,13 +419,28 @@ def insert_map_producto_batch(conn, producto, sku_mapping):
     if codigo_alt in sku_mapping:
         sku_oficial = sku_mapping[codigo_alt]
     else:
-        # Try to find SKU from map_producto (populated by Neo4j)
-        sku_from_map = find_sku_from_map_producto(codigo_alt)
-        if sku_from_map:
-            sku_oficial = sku_from_map
-        else:
-            # Fallback: generate new SKU if not found
+        sku_oficial = None
+        
+        # Use equivalence map (preferred - has info from all sources)
+        if eq_map:
+            sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
+        
+        # Fallback: Try to find in map_producto (for previously registered products)
+        if not sku_oficial:
+            sku_from_map = find_sku_from_map_producto(codigo_alt)
+            if sku_from_map:
+                sku_oficial = sku_from_map
+        
+        # Last resort: Try by name+category in database
+        if not sku_oficial:
+            sku_by_name = find_sku_by_name_category(nombre, categoria)
+            if sku_by_name:
+                sku_oficial = sku_by_name
+        
+        # Generate new if nothing found
+        if not sku_oficial:
             sku_oficial = get_next_sku()
+        
         sku_mapping[codigo_alt] = sku_oficial
 
     conn.execute(
@@ -558,7 +616,7 @@ def _prepare_orden_item_params(orden, detalle, productos_dict):
 # -----------------------------------------------------------------------
 
 
-def transform_mysql(clientes, productos, ordenes, orden_detalles):
+def transform_mysql(clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None):
     """
     Transforma y carga los datos de MySQL en las tablas de staging.
     OPTIMIZED: Uses single connection and batch commits for 10x+ speed improvement.
@@ -568,6 +626,7 @@ def transform_mysql(clientes, productos, ordenes, orden_detalles):
         productos: Lista de productos extraídos
         ordenes: Lista de órdenes extraídas
         orden_detalles: Lista de detalles de órdenes extraídos
+        eq_map: Mapa de equivalencias de productos (construido previamente)
     """
     total_items = len(orden_detalles)
     BATCH_SIZE = 500
@@ -586,10 +645,10 @@ def transform_mysql(clientes, productos, ordenes, orden_detalles):
                 print(f"\r    mysql: {i + 1}/{len(clientes)} clients...", end="", flush=True)
         conn.commit()
 
-        # 2. Process products (batch)
+        # 2. Process products (batch) - using equivalence map for SKU resolution
         productos_dict = {}
         for i, producto in enumerate(productos):
-            sku_oficial = insert_map_producto_batch(conn, producto, sku_mapping)
+            sku_oficial = insert_map_producto_batch(conn, producto, sku_mapping, eq_map)
             productos_dict[producto.id] = producto.codigo_alt
             if (i + 1) % BATCH_SIZE == 0:
                 conn.commit()
