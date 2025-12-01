@@ -145,14 +145,14 @@ def find_sku():
     result = pd.read_sql(query_select_map_producto_sku, engine)
 
     if result.empty:
-        return "SKU0001"
+        return "SKU-0001"
 
     colname = result.columns[0]
     raw_sku = result[colname].iloc[0]
 
     # Si viene vacío o NULL
     if raw_sku is None or pd.isna(raw_sku) or raw_sku.strip() == "":
-        return "SKU0001"
+        return "SKU-0001"
 
     sku = raw_sku.strip()
 
@@ -171,7 +171,7 @@ def find_sku():
 
     # ----- Construir siguiente SKU -----
     nuevo_num = numero + 1
-    nuevo_sku = f"SKU{nuevo_num:04d}"
+    nuevo_sku = f"SKU-{nuevo_num:04d}"
 
     return nuevo_sku
 
@@ -293,11 +293,18 @@ def pais_a_codigo(pais_nombre):
 
 def convertir_sku(sku: str) -> str:
     """
-    Convierte SKU de formato 'SKU-0000' a 'SKU0000'.
-    Si no contiene guion, lo devuelve igual.
+    Normaliza SKU al formato 'SKU-0000'.
+    Si viene sin guion (SKU0000), lo convierte a SKU-0000.
+    Si ya tiene guion, lo devuelve igual.
     """
+    if not sku:
+        return sku
+    # Si ya tiene el guion, devolverlo tal cual
     if "-" in sku:
-        return sku.replace("-", "")
+        return sku
+    # Si viene sin guion (SKU0000), agregar el guion después de "SKU"
+    if sku.upper().startswith("SKU") and len(sku) > 3:
+        return f"SKU-{sku[3:]}"
     return sku
 
 

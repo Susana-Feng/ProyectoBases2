@@ -263,16 +263,39 @@ GROUP BY t.Anio, t.Mes, p.SKU, p.Nombre, p.Categoria;
 GO
 
 -- Vista: Transacciones con lista de ítems (para reglas de asociación)
+-- IMPORTANT: SourceKey format is "ordenId-itemId", we need to group by ordenId only
+-- to get all items in a single transaction for Apriori algorithm
 IF OBJECT_ID('dw.vw_Transacciones','V') IS NOT NULL DROP VIEW dw.vw_Transacciones;
 GO
 CREATE VIEW dw.vw_Transacciones AS
 SELECT
-	V.SourceKey AS transaction_id,
-	STRING_AGG(P.SKU, ', ') AS item
+    -- Extract only the order part from SourceKey (before the last hyphen-separated segment)
+    -- Handles: mssql/mysql "1000-2926", mongo "objId-objId", supabase "uuid-uuid", neo4j "ORD-XXX-SKU-YYY"
+    CASE 
+        WHEN V.Fuente = 'neo4j' THEN 
+            -- neo4j format: ORD-000001-SKU-1133 -> extract ORD-000001
+            LEFT(V.SourceKey, CHARINDEX('-SKU-', V.SourceKey) - 1)
+        WHEN V.Fuente IN ('mongo') THEN 
+            -- mongo ObjectId format: 24 chars each, separated by hyphen
+            LEFT(V.SourceKey, 24)
+        WHEN V.Fuente = 'supabase' THEN 
+            -- supabase UUID format: 36 chars each, separated by hyphen
+            LEFT(V.SourceKey, 36)
+        ELSE 
+            -- mssql/mysql format: ordenId-itemId, extract ordenId (before last hyphen)
+            LEFT(V.SourceKey, LEN(V.SourceKey) - CHARINDEX('-', REVERSE(V.SourceKey)))
+    END AS transaction_id,
+    STRING_AGG(P.SKU, ', ') WITHIN GROUP (ORDER BY P.SKU) AS item
 FROM dw.FactVentas AS V
-INNER JOIN dw.DimProducto P
-ON V.ProductoID = P.ProductoID
-GROUP BY V.SourceKey
+INNER JOIN dw.DimProducto P ON V.ProductoID = P.ProductoID
+WHERE P.SKU IS NOT NULL AND P.SKU != ''  -- Only include products with valid SKUs
+GROUP BY 
+    CASE 
+        WHEN V.Fuente = 'neo4j' THEN LEFT(V.SourceKey, CHARINDEX('-SKU-', V.SourceKey) - 1)
+        WHEN V.Fuente IN ('mongo') THEN LEFT(V.SourceKey, 24)
+        WHEN V.Fuente = 'supabase' THEN LEFT(V.SourceKey, 36)
+        ELSE LEFT(V.SourceKey, LEN(V.SourceKey) - CHARINDEX('-', REVERSE(V.SourceKey)))
+    END
 GO
 
 /* =======================================================================

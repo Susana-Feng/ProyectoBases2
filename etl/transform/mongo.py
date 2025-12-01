@@ -121,8 +121,10 @@ def find_sku():
     result = (pd.read_sql(query_select_map_producto_sku, engine))["SKU"].iloc[
         0
     ]  # convertir a dataframe y obtener valor de SKU
-    sku = int(result.split("SKU")[1]) + 1  # obtener siguiente numero de SKU
-    sku = "SKU" + str(sku).zfill(4)  # Cambiar formato a SKUxxxx
+    # Extraer parte numérica del SKU (puede ser SKU-0000 o SKU0000)
+    sku_str = result.replace("-", "") if result else "SKU0000"
+    sku = int(sku_str.split("SKU")[1]) + 1  # obtener siguiente numero de SKU
+    sku = "SKU-" + str(sku).zfill(4)  # Cambiar formato a SKU-xxxx
 
     return sku
 

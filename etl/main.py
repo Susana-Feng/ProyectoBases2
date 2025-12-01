@@ -14,9 +14,12 @@ from transform.supabase import transform_supabase
 from transform.mongo import transform_mongo
 from transform.neo4j import transform_Neo4j
 from load.general import load_datawarehouse
+from association_rules.load_rules import carga_reglas_asociacion
 
 # Suppress SQLAlchemy SAWarning about unrecognized SQL Server versions
 warnings.filterwarnings("ignore", message=".*Unrecognized server version info.*")
+# Suppress Supabase deprecation warnings (internal library issue)
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="supabase")
 
 SUPPORTED_DBS = {"mssql", "mysql", "supabase", "mongo", "neo4j"}
 DEFAULT_DBS = ["mssql", "mysql", "supabase", "mongo", "neo4j"]
@@ -319,6 +322,14 @@ if __name__ == "__main__":
         # ========== LOAD ==========
         print("\n[4] Load to Data Warehouse")
         load_datawarehouse()
+        check_interrupt()
+
+        # ========== ASSOCIATION RULES ==========
+        print("\n[5] Association Rules (Apriori/FP-Growth)")
+        try:
+            carga_reglas_asociacion()
+        except Exception as e:
+            print(f"    Warning: Could not generate association rules: {e}")
 
         print("\nETL completed successfully\n")
 

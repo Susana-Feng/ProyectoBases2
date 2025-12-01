@@ -120,13 +120,18 @@ query_insert_orden_item_stg = """
 # Query para obtener el siguiente SKU disponible
 query_select_max_sku = """
     SELECT 
-        'SKU' +
+        'SKU-' +
         RIGHT('0000' + CAST(
-            COALESCE(MAX(CAST(SUBSTRING(sku_oficial, 4, LEN(sku_oficial)) AS INT)), 0) + 1
+            COALESCE(MAX(CAST(
+                CASE 
+                    WHEN SUBSTRING(sku_oficial, 4, 1) = '-' 
+                        THEN SUBSTRING(sku_oficial, 5, LEN(sku_oficial))  -- SKU-0001
+                    ELSE SUBSTRING(sku_oficial, 4, LEN(sku_oficial))      -- SKU0001
+                END
+            AS INT)), 0) + 1
         AS VARCHAR(10)), 4) AS NextSKU
     FROM stg.map_producto
-    WHERE sku_oficial LIKE 'SKU%'
-        AND ISNUMERIC(SUBSTRING(sku_oficial, 4, LEN(sku_oficial))) = 1;
+    WHERE sku_oficial LIKE 'SKU%';
 """
 
 # Query para buscar SKU por codigo_alt
@@ -291,14 +296,14 @@ def get_next_sku():
     Obtiene el siguiente SKU disponible de la secuencia.
 
     Returns:
-        str: SKU en formato 'SKUxxxx'
+        str: SKU en formato 'SKU-xxxx'
     """
     with engine.connect() as conn:
         result = conn.execute(text(query_select_max_sku))
         row = result.fetchone()
         if row and row[0]:
             return row[0]
-        return "SKU0001"
+        return "SKU-0001"
 
 
 # -----------------------------------------------------------------------
