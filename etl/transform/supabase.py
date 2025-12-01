@@ -339,30 +339,34 @@ def transform_supabase(clientes, productos, ordenes, orden_detalles):
         try:
             codigo_original = producto.get("sku")
             producto_id = producto.get("producto_id")
+            nombre = producto.get("nombre")
+            categoria = producto.get("categoria")
 
             # Store in dict for later lookup
             productos_dict[producto_id] = codigo_original or ""
 
             if codigo_original:
-                es_sku_oficial = validar_producto_en_stg(
-                    codigo_original,
-                    producto.get("nombre"),
-                    producto.get("categoria"),
-                )
-                if es_sku_oficial:
-                    sku_nueva = convertir_sku(codigo_original)
+                # Supabase uses SKU directly (like MSSQL)
+                # If it looks like a valid SKU (SKU-XXXX format), use it directly
+                normalized_sku = convertir_sku(codigo_original)
+                if normalized_sku.startswith("SKU-"):
+                    # Valid SKU format - use directly, don't generate new one
+                    sku_nueva = normalized_sku
                 else:
-                    sku_existente = obtener_sku_existente(
-                        producto.get("nombre"), producto.get("categoria")
-                    )
+                    # Non-standard format - try to find existing by name/category
+                    sku_existente = obtener_sku_existente(nombre, categoria)
                     if sku_existente:
                         sku_nueva = sku_existente
                     else:
                         sku_nueva = find_sku()
             else:
-                sku_nueva = ""
-            nombre = producto.get("nombre")
-            categoria = producto.get("categoria")
+                # No SKU provided - try to find by name/category from Neo4j
+                sku_existente = obtener_sku_existente(nombre, categoria)
+                if sku_existente:
+                    sku_nueva = sku_existente
+                else:
+                    # This is a service or product only in Supabase
+                    sku_nueva = ""
 
             insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
             productos_procesados += 1
@@ -403,6 +407,7 @@ def insert_orden_items_stg_with_progress(
     orden_detalles, ordenes_dict, productos_dict, clientes_count, productos_count
 ):
     """Insert order items with progress display.
+    OPTIMIZED: Uses single connection and batch commits.
 
     Args:
         orden_detalles: List of order detail records
@@ -414,58 +419,59 @@ def insert_orden_items_stg_with_progress(
     total_items = len(orden_detalles)
     procesados = 0
     errores = 0
+    BATCH_SIZE = 500
 
-    for detalle in orden_detalles:
-        # Get the order for this detail
-        orden_id = detalle.get("orden_id")
-        orden = ordenes_dict.get(orden_id)
-        if not orden:
-            errores += 1
-            continue
+    with engine.connect() as conn:
+        for detalle in orden_detalles:
+            # Get the order for this detail
+            orden_id = detalle.get("orden_id")
+            orden = ordenes_dict.get(orden_id)
+            if not orden:
+                errores += 1
+                continue
 
-        # Validar y convertir fecha
-        fecha_raw = orden.get("fecha")
-        if fecha_raw:
+            # Validar y convertir fecha
+            fecha_raw = orden.get("fecha")
+            if fecha_raw:
+                try:
+                    fecha_dt = datetime.fromisoformat(fecha_raw).date()
+                except Exception:
+                    errores += 1
+                    continue
+            else:
+                errores += 1
+                continue
+
+            # Validar cantidad
             try:
-                fecha_dt = datetime.fromisoformat(fecha_raw).date()
-            except Exception:
+                cantidad_num = float(detalle.get("cantidad", 0))
+                if cantidad_num <= 0:
+                    errores += 1
+                    continue
+            except (ValueError, TypeError):
                 errores += 1
                 continue
-        else:
-            errores += 1
-            continue
 
-        # Validar cantidad
-        try:
-            cantidad_num = float(detalle.get("cantidad", 0))
-            if cantidad_num <= 0:
+            # Validar precio unitario
+            try:
+                precio_unit_num = float(detalle.get("precio_unit", 0))
+            except (ValueError, TypeError):
                 errores += 1
                 continue
-        except (ValueError, TypeError):
-            errores += 1
-            continue
 
-        # Validar precio unitario
-        try:
-            precio_unit_num = float(detalle.get("precio_unit", 0))
-        except (ValueError, TypeError):
-            errores += 1
-            continue
+            # Get total from order
+            try:
+                total_num = float(orden.get("total", 0))
+            except (ValueError, TypeError):
+                total_num = 0.0
 
-        # Get total from order
-        try:
-            total_num = float(orden.get("total", 0))
-        except (ValueError, TypeError):
-            total_num = 0.0
+            # Get SKU from productos_dict
+            producto_id = detalle.get("producto_id")
+            if not producto_id:
+                errores += 1
+                continue
+            sku = productos_dict.get(producto_id, "")
 
-        # Get SKU from productos_dict (no need for extra API call)
-        producto_id = detalle.get("producto_id")
-        if not producto_id:
-            errores += 1
-            continue
-        sku = productos_dict.get(producto_id, "")
-
-        with engine.connect() as conn:
             conn.execute(
                 text(query_insert_orden_item_stg),
                 {
@@ -486,69 +492,72 @@ def insert_orden_items_stg_with_progress(
                     "total_num": total_num,
                 },
             )
-            conn.commit()
 
-        procesados += 1
-        if (procesados + errores) % 100 == 0 or (procesados + errores) == total_items:
-            print(
-                f"\r    supab: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
-                end="",
-                flush=True,
-            )
+            procesados += 1
+            if procesados % BATCH_SIZE == 0:
+                conn.commit()
+                print(
+                    f"\r    supab: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
+                    end="", flush=True
+                )
+
+        conn.commit()  # Final commit
 
     return procesados, errores
 
 
 def insert_clientes_stg_with_progress(clientes, productos_count, items_count):
-    """Insert clients with progress display."""
+    """Insert clients with progress display.
+    OPTIMIZED: Uses single connection and batch commits."""
     total_clientes = len(clientes)
     procesados = 0
     errores = 0
+    BATCH_SIZE = 500
 
-    for cliente in clientes:
-        source_code = str(cliente.get("cliente_id"))
+    with engine.connect() as conn:
+        for cliente in clientes:
+            source_code = str(cliente.get("cliente_id"))
 
-        # Validar y convertir fecha de creación
-        fecha_creado_raw = cliente.get("fecha_registro")
-        if fecha_creado_raw:
-            try:
-                if isinstance(fecha_creado_raw, str):
-                    fecha_creado_dt = datetime.fromisoformat(fecha_creado_raw).date()
-                    fecha_creado_raw_str = fecha_creado_raw
-                elif hasattr(fecha_creado_raw, "date"):
-                    fecha_creado_dt = fecha_creado_raw.date()
-                    fecha_creado_raw_str = str(fecha_creado_raw)
-                else:
+            # Validar y convertir fecha de creación
+            fecha_creado_raw = cliente.get("fecha_registro")
+            if fecha_creado_raw:
+                try:
+                    if isinstance(fecha_creado_raw, str):
+                        fecha_creado_dt = datetime.fromisoformat(fecha_creado_raw).date()
+                        fecha_creado_raw_str = fecha_creado_raw
+                    elif hasattr(fecha_creado_raw, "date"):
+                        fecha_creado_dt = fecha_creado_raw.date()
+                        fecha_creado_raw_str = str(fecha_creado_raw)
+                    else:
+                        fecha_creado_dt = None
+                        fecha_creado_raw_str = "1900-01-01"
+                except Exception:
                     fecha_creado_dt = None
                     fecha_creado_raw_str = "1900-01-01"
-            except Exception:
+            else:
                 fecha_creado_dt = None
                 fecha_creado_raw_str = "1900-01-01"
-        else:
-            fecha_creado_dt = None
-            fecha_creado_raw_str = "1900-01-01"
 
-        # Validar género
-        genero_raw = cliente.get("genero")
-        if genero_raw == "M":
-            genero_nuevo = "Masculino"
-        elif genero_raw == "F":
-            genero_nuevo = "Femenino"
-        elif genero_raw in ("Masculino", "Femenino"):
-            genero_nuevo = genero_raw
-        else:
-            genero_nuevo = "No especificado"
+            # Validar género
+            genero_raw = cliente.get("genero")
+            if genero_raw == "M":
+                genero_nuevo = "Masculino"
+            elif genero_raw == "F":
+                genero_nuevo = "Femenino"
+            elif genero_raw in ("Masculino", "Femenino"):
+                genero_nuevo = genero_raw
+            else:
+                genero_nuevo = "No especificado"
 
-        # Transformar nombre pais
-        pais_nombre = cliente.get("pais")
-        pais_codigo = pais_a_codigo(pais_nombre)
-        if pais_codigo != "":
-            pais = pais_codigo
-        else:
-            pais = pais_nombre
+            # Transformar nombre pais
+            pais_nombre = cliente.get("pais")
+            pais_codigo = pais_a_codigo(pais_nombre)
+            if pais_codigo != "":
+                pais = pais_codigo
+            else:
+                pais = pais_nombre
 
-        try:
-            with engine.connect() as conn:
+            try:
                 conn.execute(
                     text(query_insert_clientes_stg),
                     {
@@ -563,17 +572,14 @@ def insert_clientes_stg_with_progress(clientes, productos_count, items_count):
                         "genero_norm": genero_nuevo,
                     },
                 )
-                conn.commit()
-            procesados += 1
-        except Exception:
-            errores += 1
-            continue
+                procesados += 1
+                if procesados % BATCH_SIZE == 0:
+                    conn.commit()
+                    print(f"\r    supab: {procesados}/{total_clientes} clients...", end="", flush=True)
+            except Exception:
+                errores += 1
+                continue
 
-        if (procesados + errores) % 50 == 0 or (procesados + errores) == total_clientes:
-            print(
-                f"\r    supab: {procesados}/{total_clientes} clients...",
-                end="",
-                flush=True,
-            )
+        conn.commit()  # Final commit
 
     return procesados, errores

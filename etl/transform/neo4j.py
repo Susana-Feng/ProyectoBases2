@@ -241,6 +241,7 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
 
 
 def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
+    """Insert map_producto entry for neo4j source."""
     # SKU puede estar vacío, obtener uno existente si es así
     if not sku_nueva:
         sku_nueva = find_sku()
@@ -261,6 +262,64 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
             },
         )
 
+        conn.commit()
+
+
+def insert_all_equivalencias(producto: dict, sku_oficial: str, nombre: str, categoria: str):
+    """
+    Neo4j tiene todos los códigos (sku, codigo_alt, codigo_mongo).
+    Esta función registra las equivalencias para TODAS las fuentes,
+    permitiendo que MySQL y MongoDB encuentren el SKU correcto.
+    
+    Según instrucciones: "Múltiples códigos por producto (propiedades sku, codigo_alt, codigo_mongo)"
+    """
+    sku = producto.get("sku")
+    codigo_alt = producto.get("codigo_alt")
+    codigo_mongo = producto.get("codigo_mongo")
+    
+    with engine.connect() as conn:
+        # 1. Registro para Neo4j (usa SKU como source_code)
+        if sku:
+            conn.execute(
+                text(query_insert_map_producto),
+                {
+                    "source_system": "neo4j",
+                    "source_code": sku,
+                    "sku_oficial": sku_oficial,
+                    "nombre_norm": nombre,
+                    "categoria_norm": categoria,
+                    "es_servicio": False,
+                },
+            )
+        
+        # 2. Registro para MySQL (usa codigo_alt como source_code)
+        if codigo_alt:
+            conn.execute(
+                text(query_insert_map_producto),
+                {
+                    "source_system": "mysql",
+                    "source_code": codigo_alt,
+                    "sku_oficial": sku_oficial,
+                    "nombre_norm": nombre,
+                    "categoria_norm": categoria,
+                    "es_servicio": False,
+                },
+            )
+        
+        # 3. Registro para MongoDB (usa codigo_mongo como source_code)
+        if codigo_mongo:
+            conn.execute(
+                text(query_insert_map_producto),
+                {
+                    "source_system": "mongo",
+                    "source_code": codigo_mongo,
+                    "sku_oficial": sku_oficial,
+                    "nombre_norm": nombre,
+                    "categoria_norm": categoria,
+                    "es_servicio": False,
+                },
+            )
+        
         conn.commit()
 
 
@@ -305,67 +364,69 @@ def unir_relaciones_por_orden(rel_realizo, rel_contiente):
 
 
 def insert_orden_items_stg(orden_completa, clientes_count, productos_count):
-    """Insert order items with progress display."""
+    """Insert order items with progress display.
+    OPTIMIZED: Uses single connection and batch commits."""
     total_items = len(orden_completa)
     procesados = 0
     errores = 0
+    BATCH_SIZE = 500
 
-    for i in orden_completa:
-        # ----------------------------------------------
-        # 1. Extraer datos del registro
-        # ----------------------------------------------
-        try:
-            cliente = i["cliente"]
-            orden = i["orden"]
-            producto = i["producto"]
-            detalle = i["detalle"]
-        except KeyError:
-            errores += 1
-            continue
-
-        # -----------------------------
-        # 2. Validar y convertir fecha
-        # -----------------------------
-        fecha_raw = orden.get("fecha")
-        if fecha_raw:
+    with engine.connect() as conn:
+        for i in orden_completa:
+            # ----------------------------------------------
+            # 1. Extraer datos del registro
+            # ----------------------------------------------
             try:
-                fecha_native = fecha_raw.to_native()
-                fecha_dt = fecha_native.date()
-                fecha_str = fecha_raw.isoformat()
-            except Exception:
+                cliente = i["cliente"]
+                orden = i["orden"]
+                producto = i["producto"]
+                detalle = i["detalle"]
+            except KeyError:
                 errores += 1
                 continue
-        else:
-            errores += 1
-            continue
 
-        # Validar cantidad
-        try:
-            cantidad_num = float(detalle.get("cantidad", 0))
-            if cantidad_num <= 0:
+            # -----------------------------
+            # 2. Validar y convertir fecha
+            # -----------------------------
+            fecha_raw = orden.get("fecha")
+            if fecha_raw:
+                try:
+                    fecha_native = fecha_raw.to_native()
+                    fecha_dt = fecha_native.date()
+                    fecha_str = fecha_raw.isoformat()
+                except Exception:
+                    errores += 1
+                    continue
+            else:
                 errores += 1
                 continue
-        except (ValueError, TypeError):
-            errores += 1
-            continue
 
-        # Validar precio unitario y total
-        try:
-            precio_unit_num = float(detalle.get("precio_unit", 0))
-            total_num = float(orden.get("total", 0))
-        except (ValueError, TypeError):
-            errores += 1
-            continue
+            # Validar cantidad
+            try:
+                cantidad_num = float(detalle.get("cantidad", 0))
+                if cantidad_num <= 0:
+                    errores += 1
+                    continue
+            except (ValueError, TypeError):
+                errores += 1
+                continue
 
-        # Mapeo de ProductoID para obtener sku
-        producto_id = producto.get("id")
-        sku = producto.get("sku")
+            # Validar precio unitario y total
+            try:
+                precio_unit_num = float(detalle.get("precio_unit", 0))
+                total_num = float(orden.get("total", 0))
+            except (ValueError, TypeError):
+                errores += 1
+                continue
 
-        if not producto_id or not sku:
-            errores += 1
-            continue
+            # Mapeo de ProductoID para obtener sku
+            producto_id = producto.get("id")
+            sku = producto.get("sku")
 
-        with engine.connect() as conn:
+            if not producto_id or not sku:
+                errores += 1
+                continue
+
             conn.execute(
                 text(query_insert_orden_item_stg),
                 {
@@ -386,15 +447,16 @@ def insert_orden_items_stg(orden_completa, clientes_count, productos_count):
                     "total_num": total_num,
                 },
             )
-            conn.commit()
 
-        procesados += 1
-        if (procesados + errores) % 100 == 0 or (procesados + errores) == total_items:
-            print(
-                f"\r    neo4j: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
-                end="",
-                flush=True,
-            )
+            procesados += 1
+            if procesados % BATCH_SIZE == 0:
+                conn.commit()
+                print(
+                    f"\r    neo4j: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
+                    end="", flush=True
+                )
+
+        conn.commit()  # Final commit
 
     return procesados, errores
 
@@ -424,41 +486,43 @@ def pais_a_codigo(pais_nombre):
 
 
 def insert_clientes_stg(clientes):
-    """Insert clients with progress display."""
+    """Insert clients with progress display.
+    OPTIMIZED: Uses single connection and batch commits."""
     total_clientes = len(clientes)
     procesados = 0
     errores = 0
+    BATCH_SIZE = 500
 
-    for cliente in clientes:
-        source_code = str(cliente.get("id"))
+    with engine.connect() as conn:
+        for cliente in clientes:
+            source_code = str(cliente.get("id"))
 
-        # Validar y convertir fecha de creación
-        fecha_creado_dt = datetime.now().date()
-        fecha_creado_raw_str = fecha_creado_dt.isoformat()
+            # Validar y convertir fecha de creación
+            fecha_creado_dt = datetime.now().date()
+            fecha_creado_raw_str = fecha_creado_dt.isoformat()
 
-        # Validar género
-        genero_raw = cliente.get("genero")
-        if genero_raw == "M":
-            genero_nuevo = "Masculino"
-        elif genero_raw == "F":
-            genero_nuevo = "Femenino"
-        elif genero_raw == "Otro":
-            genero_nuevo = "No especificado"
-        elif genero_raw in ("Masculino", "Femenino"):
-            genero_nuevo = genero_raw
-        else:
-            genero_nuevo = "No especificado"
+            # Validar género
+            genero_raw = cliente.get("genero")
+            if genero_raw == "M":
+                genero_nuevo = "Masculino"
+            elif genero_raw == "F":
+                genero_nuevo = "Femenino"
+            elif genero_raw == "Otro":
+                genero_nuevo = "No especificado"
+            elif genero_raw in ("Masculino", "Femenino"):
+                genero_nuevo = genero_raw
+            else:
+                genero_nuevo = "No especificado"
 
-        # Transformar nombre pais
-        pais_nombre = cliente.get("pais")
-        pais_codigo = pais_a_codigo(pais_nombre)
-        if pais_codigo != "":
-            pais = pais_codigo
-        else:
-            pais = pais_nombre
+            # Transformar nombre pais
+            pais_nombre = cliente.get("pais")
+            pais_codigo = pais_a_codigo(pais_nombre)
+            if pais_codigo != "":
+                pais = pais_codigo
+            else:
+                pais = pais_nombre
 
-        try:
-            with engine.connect() as conn:
+            try:
                 conn.execute(
                     text(query_insert_clientes_stg),
                     {
@@ -473,18 +537,15 @@ def insert_clientes_stg(clientes):
                         "genero_norm": genero_nuevo,
                     },
                 )
-                conn.commit()
-            procesados += 1
-        except Exception:
-            errores += 1
-            continue
+                procesados += 1
+                if procesados % BATCH_SIZE == 0:
+                    conn.commit()
+                    print(f"\r    neo4j: {procesados}/{total_clientes} clients...", end="", flush=True)
+            except Exception:
+                errores += 1
+                continue
 
-        if (procesados + errores) % 50 == 0 or (procesados + errores) == total_clientes:
-            print(
-                f"\r    neo4j: {procesados}/{total_clientes} clients...",
-                end="",
-                flush=True,
-            )
+        conn.commit()  # Final commit
 
     return procesados, errores
 
@@ -514,40 +575,40 @@ def convertir_sku(sku: str) -> str:
 def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene):
     """
     Transforma y carga datos de Neo4j a staging.
+    
+    IMPORTANTE: Neo4j es la fuente maestra de equivalencias porque tiene
+    todos los códigos de producto (sku, codigo_alt, codigo_mongo).
+    Por eso registra las equivalencias para TODAS las fuentes (mysql, mongo).
     """
     total_productos = len(productos)
 
     # 1. Process clients
     clientes_procesados, clientes_errores = insert_clientes_stg(clientes)
 
-    # 2. Process products and create mapping table
+    # 2. Process products and create mapping table for ALL sources
+    # Neo4j has all product codes, so it populates equivalences for mysql and mongo too
     productos_procesados = 0
     productos_errores = 0
     for producto in productos:
         try:
-            codigo_original = producto.get("sku")
-            if codigo_original:
-                es_sku_oficial = validar_producto_en_stg(
-                    codigo_original,
-                    producto.get("nombre"),
-                    producto.get("categoria"),
-                )
-                if es_sku_oficial:
-                    sku_nueva = convertir_sku(codigo_original)
-                else:
-                    sku_existente = obtener_sku_existente(
-                        producto.get("nombre"), producto.get("categoria")
-                    )
-                    if sku_existente:
-                        sku_nueva = sku_existente
-                    else:
-                        sku_nueva = find_sku()
-            else:
-                sku_nueva = ""
+            sku = producto.get("sku")
             nombre = producto.get("nombre")
             categoria = producto.get("categoria")
-
-            insert_map_producto(codigo_original, sku_nueva, nombre, categoria)
+            
+            # Determine the canonical SKU
+            if sku:
+                sku_oficial = convertir_sku(sku)
+            else:
+                # Product without SKU - try to find existing or generate new
+                sku_existente = obtener_sku_existente(nombre, categoria)
+                if sku_existente:
+                    sku_oficial = sku_existente
+                else:
+                    sku_oficial = find_sku()
+            
+            # Register equivalences for ALL sources (neo4j, mysql, mongo)
+            # This allows other sources to find the canonical SKU
+            insert_all_equivalencias(producto, sku_oficial, nombre, categoria)
             productos_procesados += 1
         except Exception:
             productos_errores += 1

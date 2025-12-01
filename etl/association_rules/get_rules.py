@@ -5,12 +5,11 @@ from configs.connections import get_dw_engine
 
 engine = get_dw_engine()
 
-# Parámetros del algoritmo
-# MIN_SUPPORT: Un itemset debe aparecer en al menos este % de transacciones
-# Con datos generados, necesitamos un soporte muy bajo para encontrar patrones
-MIN_SUPPORT = 0.0005  # 0.05% = ~3 transacciones en 5000
-MIN_CONFIDENCE = 0.05  # confianza mínima (5%) - bajo para datos generados
-MIN_ITEM_FREQUENCY = 3  # Productos que aparecen en menos de N transacciones se ignoran
+# Parámetros del algoritmo FP-Growth
+MIN_SUPPORT = 0.002       # 0.2% - itemset aparece en ~10 de 5000 órdenes
+MIN_CONFIDENCE = 0.10     # 10% - probabilidad mínima de comprar B dado A
+MIN_LIFT = 1.5            # Lift > 1.5 = asociación significativa (no aleatoria)
+MIN_ITEM_FREQUENCY = 5    # Ignorar productos con menos de 5 apariciones
 
 # Only get transactions with 2+ items for meaningful association rules
 query_get_transactions = """
@@ -86,10 +85,14 @@ def generar_reglas_asociacion():
         frequent_itemsets["length"] = frequent_itemsets["itemsets"].apply(len)
         print(f"    Itemsets frecuentes encontrados: {len(frequent_itemsets)}")
 
-        print(f"    Generando reglas con min_confidence={MIN_CONFIDENCE}...")
+        print(f"    Generando reglas con min_confidence={MIN_CONFIDENCE}, min_lift={MIN_LIFT}...")
         rules = association_rules(
             frequent_itemsets, metric="confidence", min_threshold=MIN_CONFIDENCE
         )
+        
+        # Filtrar por lift mínimo
+        if not rules.empty:
+            rules = rules[rules["lift"] >= MIN_LIFT]
 
         if not rules.empty:
             print(f"\n=== {len(rules)} Reglas de asociación generadas ===")

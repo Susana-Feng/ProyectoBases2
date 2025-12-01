@@ -149,20 +149,34 @@ COLORES = ["Negro", "Blanco", "Azul", "Rojo", "Gris", "Verde"]
 TALLAS = ["S", "M", "L", "XL"]
 PRESENTACIONES_ALIMENTO = ["250 g", "500 g", "1 kg", "2 kg"]
 
-# Patrones de asociación entre categorías de productos
-# Cuando se compra un producto de la primera categoría, hay probabilidad de comprar de la segunda
+# Asociación entre categorías: (categoria1, categoria2, probabilidad)
 CATEGORIAS_RELACIONADAS = [
-    ("Electrónica", "Electrónica", 0.4),      # Accesorios de electrónica
-    ("Ropa", "Ropa", 0.5),                     # Conjuntos de ropa
-    ("Deportes", "Ropa", 0.3),                 # Ropa deportiva
-    ("Deportes", "Deportes", 0.4),             # Equipo deportivo relacionado
-    ("Hogar", "Hogar", 0.35),                  # Artículos del hogar complementarios
-    ("Oficina", "Oficina", 0.45),              # Suministros de oficina
-    ("Alimentos", "Alimentos", 0.5),           # Productos alimenticios
-    ("Juguetes", "Juguetes", 0.4),             # Juguetes relacionados
-    ("Electrónica", "Hogar", 0.2),             # Electrónica para el hogar
-    ("Libros", "Libros", 0.35),                # Libros relacionados
+    ("Electrónica", "Electrónica", 0.4),
+    ("Ropa", "Ropa", 0.5),
+    ("Deportes", "Ropa", 0.3),
+    ("Deportes", "Deportes", 0.4),
+    ("Hogar", "Hogar", 0.35),
+    ("Oficina", "Oficina", 0.45),
+    ("Alimentos", "Alimentos", 0.5),
+    ("Juguetes", "Juguetes", 0.4),
+    ("Electrónica", "Hogar", 0.2),
+    ("Libros", "Libros", 0.35),
 ]
+
+# Bundles: grupos de productos que se compran juntos frecuentemente
+# Más bundles pequeños = patrones más fuertes para FP-Growth
+PRODUCT_BUNDLES = []
+random.seed(42)  # Seed fijo para bundles consistentes entre ejecuciones
+for i in range(100):
+    bundle_size = random.choice([2, 2, 2, 2, 3, 3])  # Mayoría de 2 productos
+    base_idx = random.randint(0, 400)
+    # Productos cercanos en el catálogo (más realista)
+    bundle_indices = [base_idx + j * random.randint(1, 5) for j in range(bundle_size)]
+    bundle_indices = [idx % 500 for idx in bundle_indices]
+    PRODUCT_BUNDLES.append(bundle_indices)
+random.seed()  # Restaurar aleatoriedad
+
+BUNDLE_PROBABILITY = 0.50  # 50% de órdenes usarán bundles
 
 # Variables globales para unicidad de clientes
 nombres_usados = set()
@@ -428,24 +442,27 @@ def seleccionar_productos_con_asociacion(
     num_items: int,
     probabilidad_asociacion: float = 0.6
 ) -> List[Dict[str, Any]]:
-    """
-    Selecciona productos con patrones de asociación para generar reglas de asociación.
-    
-    Cuando se selecciona un producto de una categoría, hay probabilidad de también
-    seleccionar otro producto de una categoría relacionada.
-    
-    Args:
-        productos: Lista de productos disponibles
-        num_items: Número de items a seleccionar
-        probabilidad_asociacion: Probabilidad de aplicar la regla de asociación
-    
-    Returns:
-        Lista de productos seleccionados
-    """
+    """Selecciona productos aplicando patrones de asociación (bundles y categorías)."""
     if num_items <= 0:
         return []
     
-    # Agrupar productos por categoría para búsqueda eficiente
+    seleccionados: List[Dict[str, Any]] = []
+    productos_ids_usados: set = set()
+    
+    # Intentar usar un bundle predefinido
+    if random.random() < BUNDLE_PROBABILITY and len(productos) >= 2:
+        bundle = random.choice(PRODUCT_BUNDLES)
+        for idx in bundle:
+            if idx < len(productos) and len(seleccionados) < num_items:
+                prod = productos[idx]
+                if id(prod) not in productos_ids_usados:
+                    seleccionados.append(prod)
+                    productos_ids_usados.add(id(prod))
+        
+        if len(seleccionados) >= num_items:
+            return seleccionados[:num_items]
+    
+    # Agrupar por categoría
     por_categoria: Dict[str, List[Dict[str, Any]]] = {}
     for p in productos:
         cat = p.get("categoria", "Otros")
@@ -453,13 +470,10 @@ def seleccionar_productos_con_asociacion(
             por_categoria[cat] = []
         por_categoria[cat].append(p)
     
-    seleccionados: List[Dict[str, Any]] = []
-    productos_ids_usados: set = set()
-    
-    # Seleccionar primer producto aleatoriamente
-    primer_prod = random.choice(productos)
-    seleccionados.append(primer_prod)
-    productos_ids_usados.add(id(primer_prod))
+    if not seleccionados:
+        primer_prod = random.choice(productos)
+        seleccionados.append(primer_prod)
+        productos_ids_usados.add(id(primer_prod))
     
     intentos = 0
     max_intentos = num_items * 10  # Evitar loops infinitos
@@ -507,7 +521,7 @@ def distribuir_productos_entre_catalogos(
     p_mysql: float = 0.9,
     p_supabase: float = 0.75,
     p_mongo: float = 0.65,
-    p_neo4j: float = 0.85,
+    p_neo4j: float = 1.0,  # Neo4j MUST have ALL products because it's the master source for equivalences
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Distribuye el universo de productos entre los diferentes catálogos."""
     productos_mssql: List[Dict[str, Any]] = []

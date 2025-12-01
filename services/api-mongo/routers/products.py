@@ -9,7 +9,7 @@ from controllers.products import ProductsController
 router = APIRouter(prefix="/products", tags=["Products"])
 
 @router.get("/", summary="List products")
-def list_products(skip: int = 0, limit: int = 10) -> Any:
+def list_products(skip: int = 0, limit: int = 10000) -> Any:
     return ProductsController.get_all_products(skip=skip, limit=limit)
 
 @router.get("/by-skus")

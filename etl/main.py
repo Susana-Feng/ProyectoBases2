@@ -217,8 +217,35 @@ if __name__ == "__main__":
                 sys.exit(1)
 
         # ========== TRANSFORMATION ==========
+        # IMPORTANT: Neo4j must be processed FIRST because it has all product codes
+        # (sku, codigo_alt, codigo_mongo) and populates equivalences for other sources
         print("\n[3] Transformation")
 
+        # 1. NEO4J FIRST - populates equivalences for all sources (mysql, mongo)
+        if "neo4j" in selected_dbs and objetos_neo4j:
+            try:
+                # extract_neo4j returns: {"nodes": {...}, "relationships": {...}}
+                nodes = objetos_neo4j["nodes"]
+                rels = objetos_neo4j["relationships"]
+                transform_Neo4j(
+                    nodes.get("Producto", []),
+                    nodes.get("Cliente", []),
+                    rels.get("REALIZO", []),
+                    rels.get("CONTIENE", []),
+                )
+                check_interrupt()
+            except InterruptedError:
+                raise
+            except Exception as e:
+                if interrupted:
+                    raise InterruptedError("Neo4j transformation interrupted")
+                print(f"    Error transforming Neo4j data: {e}")
+                import traceback
+
+                traceback.print_exc()
+                sys.exit(1)
+
+        # 2. MSSQL - has canonical SKU
         if "mssql" in selected_dbs and objetos_mssql:
             try:
                 transform_mssql(
@@ -239,6 +266,7 @@ if __name__ == "__main__":
                 traceback.print_exc()
                 sys.exit(1)
 
+        # 3. MYSQL - uses equivalences from Neo4j (codigo_alt -> sku)
         if "mysql" in selected_dbs and objetos_mysql:
             try:
                 transform_mysql(
@@ -259,6 +287,7 @@ if __name__ == "__main__":
                 traceback.print_exc()
                 sys.exit(1)
 
+        # 4. SUPABASE - has SKU directly
         if "supabase" in selected_dbs and objetos_supabase:
             try:
                 # extract_supabase returns: (clientes, productos, ordenes, orden_detalles)
@@ -280,6 +309,7 @@ if __name__ == "__main__":
                 traceback.print_exc()
                 sys.exit(1)
 
+        # 5. MONGODB - uses equivalences from Neo4j (codigo_mongo -> sku)
         if "mongo" in selected_dbs and objetos_mongo:
             try:
                 # extract_mongo returns: (productos, clientes, ordenes)
@@ -295,26 +325,6 @@ if __name__ == "__main__":
 
                 traceback.print_exc()
                 sys.exit(1)
-
-        if "neo4j" in selected_dbs and objetos_neo4j:
-            try:
-                # extract_neo4j returns: {"nodes": {...}, "relationships": {...}}
-                nodes = objetos_neo4j["nodes"]
-                rels = objetos_neo4j["relationships"]
-                transform_Neo4j(
-                    nodes.get("Producto", []),
-                    nodes.get("Cliente", []),
-                    rels.get("REALIZO", []),
-                    rels.get("CONTIENE", []),
-                )
-                check_interrupt()
-            except InterruptedError:
-                raise
-            except Exception as e:
-                if interrupted:
-                    raise InterruptedError("Neo4j transformation interrupted")
-                print(f"    Error transforming Neo4j data: {e}")
-                import traceback
 
                 traceback.print_exc()
                 sys.exit(1)

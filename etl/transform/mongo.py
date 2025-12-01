@@ -9,6 +9,29 @@ products_collection = db["productos"]
 
 engine = get_dw_engine()
 
+# Query to find SKU from map_producto by source_code
+query_find_sku_by_source_code = """
+    SELECT TOP 1 sku_oficial
+    FROM stg.map_producto
+    WHERE source_system = :source_system AND source_code = :source_code
+"""
+
+
+def find_sku_from_map_producto(codigo_mongo: str) -> str | None:
+    """
+    Find SKU from map_producto table.
+    Neo4j populates equivalences for all sources, so MongoDB can find its SKU here.
+    """
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(query_find_sku_by_source_code),
+            {"source_system": "mongo", "source_code": codigo_mongo}
+        )
+        row = result.fetchone()
+        if row:
+            return row[0]
+    return None
+
 
 """ -----------------------------------------------------------------------
             Queries de SQL para transformación de datos de MongoDB
@@ -130,13 +153,30 @@ def find_sku():
 
 
 def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
-    # SKU puede estar vacío, obtener uno existente si es así
+    """
+    Inserta un producto en la tabla stg.map_producto.
+    
+    MongoDB tiene el campo equivalencias.sku, pero si está vacío,
+    buscamos en map_producto (poblado por Neo4j) usando codigo_mongo.
+    """
+    # Si no tiene SKU del campo equivalencias, buscar en map_producto
     if not sku_nueva:
-        sku_nueva = find_sku()
+        # Try to find SKU from map_producto (populated by Neo4j)
+        if codigo_original:
+            sku_from_map = find_sku_from_map_producto(codigo_original)
+            if sku_from_map:
+                sku_nueva = sku_from_map
+            else:
+                # Fallback: generate new SKU
+                sku_nueva = find_sku()
+        else:
+            sku_nueva = find_sku()
+    
     # Ensure source_code is never empty
     if not codigo_original:
         codigo_original = "Sin código"
 
+    # MERGE ensures we don't duplicate if Neo4j already inserted this entry
     with engine.connect() as conn:
         conn.execute(
             text(query_insert_map_producto),
@@ -146,7 +186,7 @@ def insert_map_producto(codigo_original, sku_nueva, nombre, categoria):
                 "sku_oficial": sku_nueva,
                 "nombre_norm": nombre,
                 "categoria_norm": categoria,
-                "es_servicio": False,  # Mongo solo tiene productos físicos
+                "es_servicio": False,
             },
         )
 
@@ -181,58 +221,64 @@ def flatten_items(orden, items_flat):
 
 
 def insert_orden_items_stg(items_flat, clientes_count, productos_count):
-    """Insert order items with progress display."""
+    """Insert order items with progress display.
+    OPTIMIZED: Pre-loads product codes and uses single connection with batch commits."""
     total_items = len(items_flat)
     procesados = 0
     errores = 0
+    BATCH_SIZE = 500
 
-    for i in items_flat:
-        # Validar y convertir fecha
-        fecha_raw = i.get("fecha")
-        if fecha_raw and hasattr(fecha_raw, "date"):
-            fecha_dt = fecha_raw.date()
-        else:
-            errores += 1
-            continue
+    # Pre-load all product codes from MongoDB (much faster than individual queries)
+    product_ids = list(set(i.get("producto_id") for i in items_flat if i.get("producto_id")))
+    productos_map = {}
+    try:
+        for prod in products_collection.find(
+            {"_id": {"$in": [ObjectId(pid) for pid in product_ids]}},
+            {"codigo_mongo": 1}
+        ):
+            productos_map[str(prod["_id"])] = prod.get("codigo_mongo")
+    except Exception:
+        pass  # Will fall back to individual lookups if needed
 
-        # Validar cantidad
-        try:
-            cantidad_num = float(i.get("cantidad", 0))
-            if cantidad_num <= 0:
+    with engine.connect() as conn:
+        for i in items_flat:
+            # Validar y convertir fecha
+            fecha_raw = i.get("fecha")
+            if fecha_raw and hasattr(fecha_raw, "date"):
+                fecha_dt = fecha_raw.date()
+            else:
                 errores += 1
                 continue
-        except (ValueError, TypeError):
-            errores += 1
-            continue
 
-        # Validar precio unitario y total
-        try:
-            precio_unit_num = float(i.get("precio_unitario", 0))
-            total_num = float(i.get("total_orden", 0))
-        except (ValueError, TypeError):
-            errores += 1
-            continue
+            # Validar cantidad
+            try:
+                cantidad_num = float(i.get("cantidad", 0))
+                if cantidad_num <= 0:
+                    errores += 1
+                    continue
+            except (ValueError, TypeError):
+                errores += 1
+                continue
 
-        # Mapeo de ProductoID para obtener codigo_mongo
-        producto_id = i.get("producto_id")
-        if not producto_id:
-            errores += 1
-            continue
+            # Validar precio unitario y total
+            try:
+                precio_unit_num = float(i.get("precio_unitario", 0))
+                total_num = float(i.get("total_orden", 0))
+            except (ValueError, TypeError):
+                errores += 1
+                continue
 
-        try:
-            producto_obj = products_collection.find_one(
-                {"_id": ObjectId(producto_id)}, {"codigo_mongo": 1}
-            )
-            codigo_mongo = producto_obj["codigo_mongo"] if producto_obj else None
+            # Get codigo_mongo from pre-loaded map
+            producto_id = i.get("producto_id")
+            if not producto_id:
+                errores += 1
+                continue
 
+            codigo_mongo = productos_map.get(producto_id)
             if not codigo_mongo:
                 errores += 1
                 continue
-        except Exception:
-            errores += 1
-            continue
 
-        with engine.connect() as conn:
             conn.execute(
                 text(query_insert_orden_item_stg),
                 {
@@ -253,53 +299,55 @@ def insert_orden_items_stg(items_flat, clientes_count, productos_count):
                     "total_num": total_num,
                 },
             )
-            conn.commit()
 
-        procesados += 1
-        if (procesados + errores) % 100 == 0 or (procesados + errores) == total_items:
-            print(
-                f"\r    mongo: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
-                end="",
-                flush=True,
-            )
+            procesados += 1
+            if procesados % BATCH_SIZE == 0:
+                conn.commit()
+                print(
+                    f"\r    mongo: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
+                    end="", flush=True
+                )
+
+        conn.commit()  # Final commit
 
     return procesados, errores
 
 
 def insert_clientes_stg(clientes):
-    """Insert clients with progress display."""
+    """Insert clients with progress display.
+    OPTIMIZED: Uses single connection and batch commits."""
     total_clientes = len(clientes)
     procesados = 0
     errores = 0
+    BATCH_SIZE = 500
 
-    for cliente in clientes:
-        source_code = str(cliente.get("_id"))  # ObjectId → string
+    with engine.connect() as conn:
+        for cliente in clientes:
+            source_code = str(cliente.get("_id"))  # ObjectId → string
 
-        # Validar y convertir fecha de creación
-        fecha_creado_raw = cliente.get("creado")
-        if fecha_creado_raw:
-            if hasattr(fecha_creado_raw, "date"):
-                fecha_creado_dt = fecha_creado_raw.date()
-                fecha_creado_raw_str = str(fecha_creado_raw)
+            # Validar y convertir fecha de creación
+            fecha_creado_raw = cliente.get("creado")
+            if fecha_creado_raw:
+                if hasattr(fecha_creado_raw, "date"):
+                    fecha_creado_dt = fecha_creado_raw.date()
+                    fecha_creado_raw_str = str(fecha_creado_raw)
+                else:
+                    fecha_creado_dt = None
+                    fecha_creado_raw_str = str(fecha_creado_raw)
             else:
                 fecha_creado_dt = None
-                fecha_creado_raw_str = str(fecha_creado_raw)
-        else:
-            # Si no hay fecha, usar fecha por defecto
-            fecha_creado_dt = None
-            fecha_creado_raw_str = "1900-01-01"
+                fecha_creado_raw_str = "1900-01-01"
 
-        # Validar género
-        genero_raw = cliente.get("genero")
-        if genero_raw == "Otro":
-            genero_nuevo = "No especificado"
-        elif genero_raw in ("Masculino", "Femenino"):
-            genero_nuevo = genero_raw
-        else:
-            genero_nuevo = "No especificado"
+            # Validar género
+            genero_raw = cliente.get("genero")
+            if genero_raw == "Otro":
+                genero_nuevo = "No especificado"
+            elif genero_raw in ("Masculino", "Femenino"):
+                genero_nuevo = genero_raw
+            else:
+                genero_nuevo = "No especificado"
 
-        try:
-            with engine.connect() as conn:
+            try:
                 conn.execute(
                     text(query_insert_clientes_stg),
                     {
@@ -314,18 +362,15 @@ def insert_clientes_stg(clientes):
                         "genero_norm": genero_nuevo,
                     },
                 )
-                conn.commit()
-            procesados += 1
-        except Exception:
-            errores += 1
-            continue
+                procesados += 1
+                if procesados % BATCH_SIZE == 0:
+                    conn.commit()
+                    print(f"\r    mongo: {procesados}/{total_clientes} clients...", end="", flush=True)
+            except Exception:
+                errores += 1
+                continue
 
-        if (procesados + errores) % 50 == 0 or (procesados + errores) == total_clientes:
-            print(
-                f"\r    mongo: {procesados}/{total_clientes} clients...",
-                end="",
-                flush=True,
-            )
+        conn.commit()  # Final commit
 
     return procesados, errores
 

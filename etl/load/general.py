@@ -134,6 +134,17 @@ query_select_map_producto_new = """
         WHERE dp.SourceSystem = P.source_system 
         AND dp.SourceKey = P.source_code
     )
+    -- Order by source priority: MSSQL has "official" SKU, so it should be loaded first
+    ORDER BY 
+        CASE P.source_system
+            WHEN 'mssql' THEN 1
+            WHEN 'neo4j' THEN 2
+            WHEN 'mysql' THEN 3
+            WHEN 'supabase' THEN 4
+            WHEN 'mongo' THEN 5
+            ELSE 6
+        END,
+        P.sku_oficial
 """
 
 query_insert_dimProducto_dw = """
@@ -202,9 +213,12 @@ query_insert_factVentas = """
     INNER JOIN dw.DimCliente AS C
         ON O.cliente_key = C.SourceKey
         AND O.source_system = C.SourceSystem
+    -- Use map_producto as bridge to resolve source_code -> sku_oficial -> DimProducto
+    INNER JOIN stg.map_producto AS M
+        ON O.source_code_prod = M.source_code
+        AND O.source_system = M.source_system
     INNER JOIN dw.DimProducto AS P
-        ON O.source_code_prod = P.SourceKey
-        AND O.source_system = P.SourceSystem
+        ON M.sku_oficial = P.SKU
     WHERE O.load_ts > :last_load_ts
         AND NOT EXISTS (
             SELECT 1 FROM dw.FactVentas fv
@@ -509,28 +523,7 @@ def load_fact_ventas(conn):
         before_by_source[row.Fuente] = row.cnt
     count_before = sum(before_by_source.values())
 
-    # Insert (query already has NOT EXISTS to avoid duplicates)
-    conn.execute(text(query_insert_factVentas), {"last_load_ts": last_load_ts})
-
-    # Count records after by source
-    after_by_source = {}
-    for row in conn.execute(text(count_by_source_query)):
-        after_by_source[row.Fuente] = row.cnt
-    count_after = sum(after_by_source.values())
-
-    loaded_count = count_after - count_before
-    skipped_count = new_records - loaded_count
-    
-    # Calculate loaded by source
-    by_source = {}
-    for source in after_by_source:
-        before = before_by_source.get(source, 0)
-        after = after_by_source[source]
-        if after - before > 0:
-            by_source[source] = after - before
-
-    # Diagnostic: check why records were skipped
-    diagnostics = None
+    # Run diagnostic BEFORE insert to get accurate counts
     diagnostic_query = """
         SELECT 
             'No DimTiempo' AS Reason,
@@ -550,17 +543,28 @@ def load_fact_ventas(conn):
             )
         UNION ALL
         SELECT 
-            'No DimProducto' AS Reason,
+            'No map_producto' AS Reason,
             COUNT(*) AS Count
         FROM stg.orden_items O
         WHERE O.load_ts > :last_load_ts
             AND NOT EXISTS (
-                SELECT 1 FROM dw.DimProducto P 
-                WHERE P.SourceKey = O.source_code_prod AND P.SourceSystem = O.source_system
+                SELECT 1 FROM stg.map_producto M 
+                WHERE M.source_code = O.source_code_prod AND M.source_system = O.source_system
             )
         UNION ALL
         SELECT 
-            'Duplicate' AS Reason,
+            'No DimProducto (SKU not found)' AS Reason,
+            COUNT(*) AS Count
+        FROM stg.orden_items O
+        INNER JOIN stg.map_producto M ON M.source_code = O.source_code_prod AND M.source_system = O.source_system
+        WHERE O.load_ts > :last_load_ts
+            AND NOT EXISTS (
+                SELECT 1 FROM dw.DimProducto P 
+                WHERE P.SKU = M.sku_oficial
+            )
+        UNION ALL
+        SELECT 
+            'Duplicate (already in FactVentas)' AS Reason,
             COUNT(*) AS Count
         FROM stg.orden_items O
         WHERE O.load_ts > :last_load_ts
@@ -581,6 +585,26 @@ def load_fact_ventas(conn):
     """
     diag_result = conn.execute(text(diagnostic_query), {"last_load_ts": last_load_ts})
     diagnostics = [(row.Reason, row.Count) for row in diag_result if row.Count > 0]
+
+    # Insert (query already has NOT EXISTS to avoid duplicates)
+    conn.execute(text(query_insert_factVentas), {"last_load_ts": last_load_ts})
+
+    # Count records after by source
+    after_by_source = {}
+    for row in conn.execute(text(count_by_source_query)):
+        after_by_source[row.Fuente] = row.cnt
+    count_after = sum(after_by_source.values())
+
+    loaded_count = count_after - count_before
+    skipped_count = new_records - loaded_count
+    
+    # Calculate loaded by source
+    by_source = {}
+    for source in after_by_source:
+        before = before_by_source.get(source, 0)
+        after = after_by_source[source]
+        if after - before > 0:
+            by_source[source] = after - before
 
     return loaded_count, skipped_count, diagnostics if diagnostics else None, by_source
 

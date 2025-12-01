@@ -22,8 +22,10 @@ interface CreateOrderDialogProps {
   onCreate: (newOrder: Orden) => Promise<void>;
 }
 
-interface SourceKey {
-  SourceKey: string;
+interface ProductInfo {
+  SKU: string;
+  Nombre: string;
+  CodigoMongo: string | null;
 }
 
 interface ConsequentRule {
@@ -78,7 +80,7 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
         const clientesJson = await resClientes.json();
         setClientes(clientesJson.data ?? clientesJson ?? []);
 
-        const resProductos = await fetch(`${apiBaseUrl}/products`);
+        const resProductos = await fetch(`${apiBaseUrl}/products?limit=10000`);
         const productosJson = await resProductos.json();
         setProductos(productosJson.data ?? productosJson ?? []);
       } catch (err) {
@@ -210,37 +212,11 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
   };
 
 
-/* ----------------------------- Buscar producto por código MongoDB (SourceKey) ----------------------------- */
-const getProductBySourceKey = (sourceKey: string): Producto | undefined => {
-  return productos.find(p => p.codigo_mongo === sourceKey);
-};
-
-/* ----------------------------- Para parsear los antecedentes ----------------------------- */
-const getAntecedentProductNames = (sourceKeysString: string): string[] => {
+const getProductNames = (jsonString: string): string[] => {
   try {
-    const sourceKeys: SourceKey[] = JSON.parse(sourceKeysString);
-    const names = sourceKeys.map(sk => {
-      const producto = getProductBySourceKey(sk.SourceKey);
-      return producto ? producto.nombre : sk.SourceKey;
-    });
-    return names;
-  } catch (error) {
-
-    return [];
-  }
-};
-
-/* ----------------------------- Para parsear los consecuentes ----------------------------- */
-const getConsequentProductNames = (sourceKeysString: string): string[] => {
-  try {
-    const sourceKeys: SourceKey[] = JSON.parse(sourceKeysString);
-    const names = sourceKeys.map(sk => {
-      const producto = getProductBySourceKey(sk.SourceKey);
-      return producto ? producto.nombre : sk.SourceKey;
-    });
-  
-    return names;
-  } catch (error) {
+    const products: ProductInfo[] = JSON.parse(jsonString);
+    return products.map(p => p.Nombre || p.SKU);
+  } catch {
     return [];
   }
 };
@@ -493,8 +469,8 @@ const computedTotal = useMemo(() => {
                 ) : (
                   <div className="space-y-3">
                     {consequents.rules.map((rule, index) => {
-                      const antecedentProductNames = getAntecedentProductNames(rule.SourceKeysAntecedentes);
-                      const consequentProductNames = getConsequentProductNames(rule.SourceKeysConsecuentes);
+                      const antecedentProductNames = getProductNames(rule.SourceKeysAntecedentes);
+                      const consequentProductNames = getProductNames(rule.SourceKeysConsecuentes);
                       
                       return (
                         <div key={index} className="p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800">

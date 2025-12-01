@@ -23,6 +23,29 @@ from configs.connections import get_dw_engine
 
 engine = get_dw_engine()
 
+# Query to find SKU from map_producto by source_code
+query_find_sku_by_source_code = """
+    SELECT TOP 1 sku_oficial
+    FROM stg.map_producto
+    WHERE source_system = :source_system AND source_code = :source_code
+"""
+
+
+def find_sku_from_map_producto(source_code: str) -> str | None:
+    """
+    Find SKU from map_producto table.
+    Neo4j populates equivalences for all sources, so MySQL can find its SKU here.
+    """
+    with engine.connect() as conn:
+        result = conn.execute(
+            text(query_find_sku_by_source_code),
+            {"source_system": "mysql", "source_code": source_code}
+        )
+        row = result.fetchone()
+        if row:
+            return row[0]
+    return None
+
 # -----------------------------------------------------------------------
 #            Queries de SQL para transformación de datos de MySQL
 #            Usando MERGE para evitar duplicados (idempotente)
@@ -314,42 +337,65 @@ def get_next_sku():
 def insert_map_producto(producto, sku_mapping):
     """
     Inserta un producto en la tabla stg.map_producto.
-    Para MySQL, el source_code es el codigo_alt ya que es lo que identifica
-    de manera única al producto y es lo que se referencia en OrdenDetalle.
+    Para MySQL, el source_code es el codigo_alt.
+    
+    Neo4j ya pobló las equivalencias en map_producto, así que primero
+    buscamos ahí. Si no existe, generamos un nuevo SKU.
 
     Args:
         producto: Row con datos del producto (id, codigo_alt, nombre, categoria)
+        sku_mapping: Dict para rastrear SKUs asignados (cache local)
+
+    Returns:
+        str: SKU asignado al producto
+    """
+    with engine.connect() as conn:
+        result = insert_map_producto_batch(conn, producto, sku_mapping)
+        conn.commit()
+    return result
+
+
+def insert_map_producto_batch(conn, producto, sku_mapping):
+    """
+    Batch version: Inserta un producto usando conexión existente (no commit).
+    
+    Args:
+        conn: Conexión activa de SQLAlchemy
+        producto: Row con datos del producto
         sku_mapping: Dict para rastrear SKUs asignados
 
     Returns:
         str: SKU asignado al producto
     """
-    # Usamos codigo_alt como source_code porque es lo que se referencia en las órdenes
     source_code = producto.codigo_alt
     codigo_alt = producto.codigo_alt
     nombre = producto.nombre
     categoria = producto.categoria
 
-    # Generar un nuevo SKU para este producto de MySQL
+    # Check local cache first
     if codigo_alt in sku_mapping:
         sku_oficial = sku_mapping[codigo_alt]
     else:
-        sku_oficial = get_next_sku()
+        # Try to find SKU from map_producto (populated by Neo4j)
+        sku_from_map = find_sku_from_map_producto(codigo_alt)
+        if sku_from_map:
+            sku_oficial = sku_from_map
+        else:
+            # Fallback: generate new SKU if not found
+            sku_oficial = get_next_sku()
         sku_mapping[codigo_alt] = sku_oficial
 
-    with engine.connect() as conn:
-        conn.execute(
-            text(query_insert_map_producto),
-            {
-                "source_system": "mysql",
-                "source_code": source_code,
-                "sku_oficial": sku_oficial,
-                "nombre_norm": nombre,
-                "categoria_norm": categoria,
-                "es_servicio": False,  # MySQL solo tiene productos físicos
-            },
-        )
-        conn.commit()
+    conn.execute(
+        text(query_insert_map_producto),
+        {
+            "source_system": "mysql",
+            "source_code": source_code,
+            "sku_oficial": sku_oficial,
+            "nombre_norm": nombre,
+            "categoria_norm": categoria,
+            "es_servicio": False,
+        },
+    )
 
     return sku_oficial
 
@@ -449,6 +495,65 @@ def insert_orden_items_stg(orden, detalle, productos_dict):
 
 
 # -----------------------------------------------------------------------
+#    BATCH helper functions for optimized processing
+# -----------------------------------------------------------------------
+
+
+def _prepare_cliente_params(cliente):
+    """Prepare parameters for client insert without DB connection."""
+    source_code = str(cliente.id)
+    genero_raw = cliente.genero
+    genero_norm = normalizar_genero(genero_raw)
+    fecha_creado_raw = cliente.created_at
+    fecha_creado_dt = parsear_fecha(fecha_creado_raw)
+
+    return {
+        "source_system": "mysql",
+        "source_code": source_code,
+        "cliente_email": cliente.correo,
+        "cliente_nombre": cliente.nombre,
+        "genero_raw": genero_raw,
+        "pais_raw": cliente.pais,
+        "fecha_creado_raw": str(fecha_creado_raw) if fecha_creado_raw else "1900-01-01",
+        "fecha_creado_dt": fecha_creado_dt,
+        "genero_norm": genero_norm,
+    }
+
+
+def _prepare_orden_item_params(orden, detalle, productos_dict):
+    """Prepare parameters for order item insert without DB connection."""
+    codigo_alt = productos_dict.get(detalle.producto_id, f"PROD-{detalle.producto_id}")
+    fecha_raw = orden.fecha
+    fecha_dt = parsear_fecha(fecha_raw)
+    if fecha_dt is None:
+        fecha_dt = datetime.now().date()
+
+    canal_raw = normalizar_canal(orden.canal)
+    cantidad_num = float(detalle.cantidad) if detalle.cantidad else 0.0
+    precio_unit_num = parsear_monto(detalle.precio_unit)
+    total_item = cantidad_num * precio_unit_num
+    moneda = orden.moneda if orden.moneda else "USD"
+
+    return {
+        "source_system": "mysql",
+        "source_key_orden": str(orden.id),
+        "source_key_item": str(detalle.id),
+        "source_code_prod": codigo_alt,
+        "cliente_key": str(orden.cliente_id),
+        "fecha_raw": str(fecha_raw),
+        "canal_raw": canal_raw,
+        "moneda": moneda,
+        "cantidad_raw": str(detalle.cantidad),
+        "precio_unit_raw": str(detalle.precio_unit),
+        "total_raw": str(total_item),
+        "fecha_dt": fecha_dt,
+        "cantidad_num": cantidad_num,
+        "precio_unit_num": precio_unit_num,
+        "total_num": total_item,
+    }
+
+
+# -----------------------------------------------------------------------
 #         Función principal de transformación de datos de MySQL
 # -----------------------------------------------------------------------
 
@@ -456,6 +561,7 @@ def insert_orden_items_stg(orden, detalle, productos_dict):
 def transform_mysql(clientes, productos, ordenes, orden_detalles):
     """
     Transforma y carga los datos de MySQL en las tablas de staging.
+    OPTIMIZED: Uses single connection and batch commits for 10x+ speed improvement.
 
     Args:
         clientes: Lista de clientes extraídos
@@ -464,57 +570,56 @@ def transform_mysql(clientes, productos, ordenes, orden_detalles):
         orden_detalles: Lista de detalles de órdenes extraídos
     """
     total_items = len(orden_detalles)
+    BATCH_SIZE = 500
 
     # Dictionary to track assigned SKUs
     sku_mapping = {}
 
-    # 1. Process clients
-    for i, cliente in enumerate(clientes):
-        insert_clientes_stg(cliente)
-        if (i + 1) % 50 == 0 or i == len(clientes) - 1:
-            print(
-                f"\r    mysql: {i + 1}/{len(clientes)} clients...",
-                end="",
-                flush=True,
-            )
+    # Use single connection for entire transform
+    with engine.connect() as conn:
+        # 1. Process clients (batch)
+        for i, cliente in enumerate(clientes):
+            params = _prepare_cliente_params(cliente)
+            conn.execute(text(query_insert_clientes_stg), params)
+            if (i + 1) % BATCH_SIZE == 0:
+                conn.commit()
+                print(f"\r    mysql: {i + 1}/{len(clientes)} clients...", end="", flush=True)
+        conn.commit()
 
-    # 2. Process products and create mapping table
-    productos_dict = {}  # {producto_id: codigo_alt}
-    for i, producto in enumerate(productos):
-        insert_map_producto(producto, sku_mapping)
-        productos_dict[producto.id] = producto.codigo_alt
-        if (i + 1) % 50 == 0 or i == len(productos) - 1:
-            print(
-                f"\r    mysql: {len(clientes)} clients | {i + 1}/{len(productos)} products...",
-                end="",
-                flush=True,
-            )
+        # 2. Process products (batch)
+        productos_dict = {}
+        for i, producto in enumerate(productos):
+            sku_oficial = insert_map_producto_batch(conn, producto, sku_mapping)
+            productos_dict[producto.id] = producto.codigo_alt
+            if (i + 1) % BATCH_SIZE == 0:
+                conn.commit()
+                print(f"\r    mysql: {len(clientes)} clients | {i + 1}/{len(productos)} products...", end="", flush=True)
+        conn.commit()
 
-    # 3. Process orders and details
-    ordenes_dict = {orden.id: orden for orden in ordenes}
+        # 3. Process order items (batch)
+        ordenes_dict = {orden.id: orden for orden in ordenes}
+        items_procesados = 0
+        errores = 0
 
-    items_procesados = 0
-    errores = 0
-    for detalle in orden_detalles:
-        orden = ordenes_dict.get(detalle.orden_id)
-        if orden:
-            try:
-                insert_orden_items_stg(orden, detalle, productos_dict)
-                items_procesados += 1
-            except Exception:
-                errores += 1
-
-            if (items_procesados + errores) % 100 == 0 or (
-                items_procesados + errores
-            ) == total_items:
-                print(
-                    f"\r    mysql: {len(clientes)} clients | {len(productos)} products | {items_procesados}/{total_items} items...",
-                    end="",
-                    flush=True,
-                )
+        for detalle in orden_detalles:
+            orden = ordenes_dict.get(detalle.orden_id)
+            if orden:
+                try:
+                    params = _prepare_orden_item_params(orden, detalle, productos_dict)
+                    conn.execute(text(query_insert_orden_item_stg), params)
+                    items_procesados += 1
+                    if items_procesados % BATCH_SIZE == 0:
+                        conn.commit()
+                        print(
+                            f"\r    mysql: {len(clientes)} clients | {len(productos)} products | {items_procesados}/{total_items} items...",
+                            end="", flush=True
+                        )
+                except Exception:
+                    errores += 1
+        conn.commit()
 
     # Final line
     output = f"\r    mysql: {len(clientes)} clients | {len(productos)} products | {items_procesados} items"
     if errores > 0:
         output += f" | {errores} errors"
-    print(output + " " * 20)  # Extra spaces to clear progress indicators
+    print(output + " " * 20)

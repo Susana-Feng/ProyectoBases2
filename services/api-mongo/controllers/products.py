@@ -9,7 +9,7 @@ products_repository = productsRepository()
 
 class ProductsController:
     @staticmethod
-    def get_all_products(skip: int = 0, limit: int = 10):
+    def get_all_products(skip: int = 0, limit: int = 10000):
         products = products_repository.get_all(skip=skip, limit=limit)
         total = len(products)
         # ensure any nested ObjectId values are converted to str

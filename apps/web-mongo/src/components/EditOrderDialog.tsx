@@ -112,7 +112,7 @@ export function EditOrderDialog({ order, open, onClose, onSave }: EditOrderDialo
         }
 
   // request all products (no pagination) so the select shows every product
-  const urlProductos = `${apiBaseUrl}/products`;
+  const urlProductos = `${apiBaseUrl}/products?limit=10000`;
         const resProductos = await fetch(urlProductos);
         if (!resProductos.ok) {
           const text = await resProductos.text().catch(() => "");

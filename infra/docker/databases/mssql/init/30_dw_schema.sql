@@ -313,7 +313,6 @@ AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Tabla temporal para SKUs de entrada
     CREATE TABLE #skus_entrada (sku NVARCHAR(50) PRIMARY KEY);
     
     INSERT INTO #skus_entrada (sku)
@@ -329,42 +328,31 @@ BEGIN
             r.Support,
             r.Confidence,
             r.Lift,
-            -- Contar antecedentes totales vs antecedentes en la lista
-            (
-                SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
-                FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') 
-                WHERE LTRIM(RTRIM(value)) <> ''
-            ) as total_antecedentes,
-            (
-                SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
-                FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') a
-                INNER JOIN #skus_entrada se ON LTRIM(RTRIM(a.value)) = se.sku
-                WHERE LTRIM(RTRIM(a.value)) <> ''
-            ) as antecedentes_en_lista,
-            -- Contar elementos en la lista de entrada
+            (SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') 
+             WHERE LTRIM(RTRIM(value)) <> '') as total_antecedentes,
+            (SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') a
+             INNER JOIN #skus_entrada se ON LTRIM(RTRIM(a.value)) = se.sku
+             WHERE LTRIM(RTRIM(a.value)) <> '') as antecedentes_en_lista,
             (SELECT COUNT(*) FROM #skus_entrada) as total_en_lista,
-            -- Verificar si algún consecuente está en la lista de entrada
-            (
-                SELECT COUNT(*)
-                FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
-                INNER JOIN #skus_entrada se ON LTRIM(RTRIM(c.value)) = se.sku
-                WHERE LTRIM(RTRIM(c.value)) <> ''
-            ) as consecuentes_en_lista,
-            -- Obtener SourceKeys de los antecedentes (SKUs de entrada)
-            (
-                SELECT dp.SourceKey
-                FROM dw.DimProducto dp
-                INNER JOIN #skus_entrada se ON dp.SKU = se.sku
-                FOR JSON PATH
-            ) AS source_keys_antecedentes,
-            -- Obtener SourceKeys de los consecuentes
-            (
-                SELECT DISTINCT dp.SourceKey
-                FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
-                INNER JOIN dw.DimProducto dp ON LTRIM(RTRIM(c.value)) = dp.SKU
-                WHERE LTRIM(RTRIM(c.value)) <> ''
-                FOR JSON PATH
-            ) AS source_keys_consecuentes
+            (SELECT COUNT(*)
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
+             INNER JOIN #skus_entrada se ON LTRIM(RTRIM(c.value)) = se.sku
+             WHERE LTRIM(RTRIM(c.value)) <> '') as consecuentes_en_lista,
+            -- Incluir SKU, Nombre y CodigoMongo para antecedentes
+            (SELECT dp.SKU, dp.Nombre, mp.source_code AS CodigoMongo
+             FROM dw.DimProducto dp
+             INNER JOIN #skus_entrada se ON dp.SKU = se.sku
+             LEFT JOIN stg.map_producto mp ON dp.SKU = mp.sku_oficial AND mp.source_system = 'mongo'
+             FOR JSON PATH) AS source_keys_antecedentes,
+            -- Incluir SKU, Nombre y CodigoMongo para consecuentes
+            (SELECT DISTINCT dp.SKU, dp.Nombre, mp.source_code AS CodigoMongo
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
+             INNER JOIN dw.DimProducto dp ON LTRIM(RTRIM(c.value)) = dp.SKU
+             LEFT JOIN stg.map_producto mp ON dp.SKU = mp.sku_oficial AND mp.source_system = 'mongo'
+             WHERE LTRIM(RTRIM(c.value)) <> ''
+             FOR JSON PATH) AS source_keys_consecuentes
         FROM analytics.AssociationRules r
     )
     SELECT TOP 5
@@ -377,9 +365,9 @@ BEGIN
         source_keys_consecuentes AS SourceKeysConsecuentes
     FROM ReglasFiltradas
     WHERE total_antecedentes > 0 
-        AND antecedentes_en_lista = total_antecedentes  -- TODOS los antecedentes en la lista
-        AND total_en_lista = total_antecedentes         -- MISMA CANTIDAD de elementos (lista exacta)
-        AND consecuentes_en_lista = 0                   -- NINGÚN consecuente en la lista
+        AND antecedentes_en_lista = total_antecedentes
+        AND total_en_lista = total_antecedentes
+        AND consecuentes_en_lista = 0
     ORDER BY Confidence DESC, Lift DESC;
 
     DROP TABLE #skus_entrada;
@@ -387,6 +375,7 @@ END;
 GO
 
 -- 9.2) Obtener SKUs equivalentes a una lista de códigos MongoDB
+-- Usa map_producto para encontrar el SKU canónico a partir del codigo_mongo
 IF OBJECT_ID('dw.sp_obtener_skus_por_codigos_mongo','P') IS NOT NULL
     DROP PROCEDURE dw.sp_obtener_skus_por_codigos_mongo;
 GO
@@ -405,13 +394,20 @@ BEGIN
     FROM STRING_SPLIT(@lista_codigos_mongo, ',')
     WHERE LTRIM(RTRIM(value)) <> '';
 
-    -- Consulta para obtener los SKUs equivalentes
+    -- Consulta para obtener los SKUs equivalentes via map_producto
+    -- El codigo_mongo está en map_producto con source_system = 'mongo'
     SELECT 
         cm.codigo_mongo AS CodigoMongo,
-        dp.SKU
+        COALESCE(mp.sku_oficial, dp.SKU) AS SKU
     FROM #codigos_mongo cm
-    LEFT JOIN dw.DimProducto dp ON cm.codigo_mongo = dp.SourceKey
-    ORDER BY dp.SKU, cm.codigo_mongo;
+    LEFT JOIN stg.map_producto mp 
+        ON cm.codigo_mongo = mp.source_code 
+        AND mp.source_system = 'mongo'
+    LEFT JOIN dw.DimProducto dp 
+        ON cm.codigo_mongo = dp.SourceKey 
+        AND dp.SourceSystem = 'mongo'
+    WHERE COALESCE(mp.sku_oficial, dp.SKU) IS NOT NULL
+    ORDER BY SKU, cm.codigo_mongo;
 
     -- Limpiar tabla temporal
     DROP TABLE #codigos_mongo;
