@@ -403,18 +403,25 @@ def generar_nombre_producto(categoria: str) -> str:
         return f"{base} {presentacion}"
 
     if categoria == "Electrónica":
-        variante = random.choice(["", "32 GB", "64 GB", "128 GB", "256 GB"])
-        if variante:
-            return f"{base} {variante}"
+        # Only add GB variant to products that don't already have specs (TB, pulgadas, etc.)
+        has_specs = any(spec in base.lower() for spec in ["tb", "pulgadas", "gb", "mhz"])
+        if not has_specs:
+            variante = random.choice(["", "32 GB", "64 GB", "128 GB", "256 GB"])
+            if variante:
+                return f"{base} {variante}"
         return base
 
     return base
 
 
 def generar_universo_productos(num_productos: int = 600) -> List[Dict[str, Any]]:
-    """Genera un universo común de productos con códigos únicos."""
+    """
+    Genera un universo común de productos con códigos únicos.
+    Garantiza que cada producto tenga un nombre+categoría único.
+    """
     productos = []
     codigos_alt_usados: set = set()
+    nombres_usados: set = set()  # Track (nombre, categoria) pairs
     categorias = list(CATALOGO_PRODUCTOS.keys())
 
     for i in range(num_productos):
@@ -422,8 +429,36 @@ def generar_universo_productos(num_productos: int = 600) -> List[Dict[str, Any]]
         codigo_mongo = f"MN-{4000 + i}"
         codigo_alt = generar_codigo_alt_unico(codigos_alt_usados)
 
-        categoria = random.choice(categorias)
-        nombre = generar_nombre_producto(categoria)
+        # Try to generate a unique name+category combination
+        max_attempts = 100
+        nombre = None
+        categoria = None
+        
+        for attempt in range(max_attempts):
+            categoria = random.choice(categorias)
+            base_nombre = generar_nombre_producto(categoria)
+            
+            # Check if this combination is unique
+            key = (base_nombre, categoria)
+            if key not in nombres_usados:
+                nombre = base_nombre
+                nombres_usados.add(key)
+                break
+            
+            # If not unique and running out of attempts, add a variant suffix
+            if attempt >= max_attempts - 10:
+                variant_num = attempt - (max_attempts - 10) + 1
+                nombre = f"{base_nombre} v{variant_num}"
+                key = (nombre, categoria)
+                if key not in nombres_usados:
+                    nombres_usados.add(key)
+                    break
+        
+        # Fallback: use SKU-based name if still no unique name found
+        if nombre is None:
+            categoria = random.choice(categorias)
+            nombre = f"Producto {sku}"
+            nombres_usados.add((nombre, categoria))
 
         producto = {
             "sku": sku,
@@ -517,13 +552,21 @@ def seleccionar_productos_con_asociacion(
 
 def distribuir_productos_entre_catalogos(
     productos_universo: List[Dict[str, Any]],
-    p_mssql: float = 0.9,
-    p_mysql: float = 0.9,
+    p_mssql: float = 0.90,
+    p_mysql: float = 0.85,
     p_supabase: float = 0.75,
-    p_mongo: float = 0.65,
-    p_neo4j: float = 1.0,  # Neo4j MUST have ALL products because it's the master source for equivalences
+    p_mongo: float = 0.70,
+    p_neo4j: float = 0.80,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Distribuye el universo de productos entre los diferentes catálogos."""
+    """
+    Distribuye el universo de productos entre los diferentes catálogos.
+    
+    GARANTIZA que cada producto esté en al menos una fuente con SKU recuperable:
+    - MSSQL (siempre tiene SKU)
+    - Neo4j (siempre tiene SKU + codigo_alt + codigo_mongo)
+    - Supabase con SKU no vacío
+    - MongoDB con equivalencias.sku
+    """
     productos_mssql: List[Dict[str, Any]] = []
     productos_mysql: List[Dict[str, Any]] = []
     productos_supabase: List[Dict[str, Any]] = []
@@ -531,8 +574,35 @@ def distribuir_productos_entre_catalogos(
     productos_neo4j: List[Dict[str, Any]] = []
 
     for prod in productos_universo:
+        # Track if this product will have SKU in at least one source
+        has_sku_source = False
+        
+        # Decide distribution for each source
+        in_mssql = random.random() < p_mssql
+        in_mysql = random.random() < p_mysql
+        in_supabase = random.random() < p_supabase
+        in_mongo = random.random() < p_mongo
+        in_neo4j = random.random() < p_neo4j
+        
+        # Determine if Supabase will have SKU (90% chance if in Supabase)
+        supabase_has_sku = in_supabase and random.random() >= 0.1
+        
+        # Determine if Mongo will have equivalencias.sku (70% chance if in Mongo)
+        mongo_has_sku = in_mongo and random.random() < 0.7
+        
+        # Check if any source will have SKU
+        has_sku_source = in_mssql or in_neo4j or supabase_has_sku or mongo_has_sku
+        
+        # If no source has SKU, force at least one (prefer MSSQL, then Neo4j)
+        if not has_sku_source:
+            # Force into MSSQL or Neo4j (both always have SKU)
+            if random.random() < 0.7:
+                in_mssql = True
+            else:
+                in_neo4j = True
+        
         # MSSQL: sku, nombre, categoria
-        if random.random() < p_mssql:
+        if in_mssql:
             productos_mssql.append(
                 {
                     'sku': prod['sku'],
@@ -542,7 +612,7 @@ def distribuir_productos_entre_catalogos(
             )
 
         # MySQL: codigo_alt, nombre, categoria
-        if random.random() < p_mysql:
+        if in_mysql:
             productos_mysql.append(
                 {
                     'codigo_alt': prod['codigo_alt'],
@@ -551,12 +621,9 @@ def distribuir_productos_entre_catalogos(
                 }
             )
 
-        # Supabase: sku (a veces vacío), nombre, categoria
-        if random.random() < p_supabase:
-            sku_value = prod['sku']
-            # Dejar algunos registros sin SKU (vacío) para reflejar que puede venir vacío
-            if random.random() < 0.1:
-                sku_value = ''
+        # Supabase: sku (sometimes empty), nombre, categoria
+        if in_supabase:
+            sku_value = prod['sku'] if supabase_has_sku else ''
             productos_supabase.append(
                 {
                     'producto_id': str(uuid4()),
@@ -567,12 +634,11 @@ def distribuir_productos_entre_catalogos(
             )
 
         # Mongo: codigo_mongo, nombre, categoria, equivalencias
-        if random.random() < p_mongo:
+        if in_mongo:
             equivalencias = {
                 'codigo_alt': prod['codigo_alt']
             }
-            # El sku en equivalencias solo aparece algunas veces
-            if random.random() < 0.7:
+            if mongo_has_sku:
                 equivalencias['sku'] = prod['sku']
 
             productos_mongo.append(
@@ -585,7 +651,7 @@ def distribuir_productos_entre_catalogos(
             )
 
         # Neo4j: sku, codigo_alt, codigo_mongo, nombre, categoria
-        if random.random() < p_neo4j:
+        if in_neo4j:
             productos_neo4j.append(
                 {
                     'sku': prod['sku'],
