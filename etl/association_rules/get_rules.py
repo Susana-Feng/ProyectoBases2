@@ -7,10 +7,10 @@ engine = get_dw_engine()
 
 # Parámetros del algoritmo
 # MIN_SUPPORT: Un itemset debe aparecer en al menos este % de transacciones
-# Con 10k+ transacciones, 0.001 (0.1%) = ~10 transacciones mínimo
-MIN_SUPPORT = 0.001
-MIN_CONFIDENCE = 0.1  # confianza mínima (10%) - bajo para datos generados
-MIN_ITEM_FREQUENCY = 5  # Productos que aparecen en menos de N transacciones se ignoran
+# Con datos generados, necesitamos un soporte muy bajo para encontrar patrones
+MIN_SUPPORT = 0.0005  # 0.05% = ~3 transacciones en 5000
+MIN_CONFIDENCE = 0.05  # confianza mínima (5%) - bajo para datos generados
+MIN_ITEM_FREQUENCY = 3  # Productos que aparecen en menos de N transacciones se ignoran
 
 # Only get transactions with 2+ items for meaningful association rules
 query_get_transactions = """
