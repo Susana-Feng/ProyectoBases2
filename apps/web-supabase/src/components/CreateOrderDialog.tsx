@@ -93,7 +93,7 @@ interface ConsequentsResponse {
 
 interface SkuMapping {
   SKU: string;
-  CodigoMongo: string;
+  CodigoSupabase: string;
 }
 
 interface MappingsResponse {
@@ -238,26 +238,33 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
     setForm((prev) => ({ ...prev, [path]: value }));
   };
 
-    /* ----------------------------- Obtener skus de supabase de los productos seleccionados ----------------------------- */
-  const getSelectedSkusSupabase = useMemo(() => {
-    const skusSupabase: string[] = [];
+    /* ----------------------------- Obtener codigos de supabase de los productos seleccionados ----------------------------- */
+  const getSelectedCodesSupabase = useMemo(() => {
+    const codesSupabase: string[] = [];
+
     form.items?.forEach(item => {
       if (item.producto_id) {
-        const producto = productos.find(p => p.sku === item.producto_id);
-        if (producto && producto.sku) {
-          skusSupabase.push(producto.sku);
+        const producto = productos.find(p => p.producto_id === item.producto_id);
+
+        if (producto) {
+          if (producto.sku) {
+            codesSupabase.push(producto.sku);   //Si existe el producto y tiene SKU → usar el SKU
+          } else {
+            codesSupabase.push(producto.producto_id);   //Si existe el producto pero no tiene SKU → usar su producto_id
+          }
         }
       }
     });
-    return skusSupabase;
+
+    return codesSupabase;
   }, [form.items, productos]);
 
     /* ----------------------------- Convertir códigos Supabase a SKUs oficiales ----------------------------- */
-  const convertCodigosSupabaseToSkus = async (skusSupabase: string[]): Promise<string[]> => {
-    if (skusSupabase.length === 0) return [];
+  const convertCodigosSupabaseToSkus = async (codesSupabase: string[]): Promise<string[]> => {
+    if (codesSupabase.length === 0) return [];
     
     try {
-      const codigosParam = skusSupabase.join(',');
+      const codigosParam = codesSupabase.join(',');
       const response = await fetch(`${apiBaseUrl}/products/by-codigos-supabase?skus=${codigosParam}`);
       
       if (!response.ok) {
@@ -277,12 +284,12 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
 
   /* ----------------------------- Obtener consecuentes ----------------------------- */
   const fetchConsequents = async () => {
-    if (getSelectedSkusSupabase.length === 0) return;
+    if (getSelectedCodesSupabase.length === 0) return;
     
     setLoadingConsequents(true);
     try {
 
-      const skus = await convertCodigosSupabaseToSkus(getSelectedSkusSupabase);
+      const skus = await convertCodigosSupabaseToSkus(getSelectedCodesSupabase);
       
       if (skus.length === 0) {
         throw new Error("No se pudieron convertir los códigos Supabase a SKUs");
@@ -312,7 +319,7 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
   const getProductNames = (jsonString: string): string[] => {
   try {
     const products: Producto[] = JSON.parse(jsonString);
-    return products.map(p => p.nombre || p.sku || "");
+    return products.map(p => p.nombre || p.sku || p.producto_id || "");
   } catch {
     return [];
   }
@@ -364,7 +371,7 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
   }, [form]);
 
   // Habilitar botón de consecuentes solo cuando hay al menos un producto seleccionado
-  const canShowConsequents = getSelectedSkusSupabase.length > 0;
+  const canShowConsequents = getSelectedCodesSupabase.length > 0;
 
 
   /* ----------------------------- Guardar ----------------------------- */
@@ -541,7 +548,7 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
                 <p className="text-sm text-neutral-500">No hay items agregados.</p>
               )}
               {form.items.map((item, i) => {
-                const producto = productos.find(p => p.sku === item.producto_id);
+                const producto = productos.find(p => p.producto_id === item.producto_id);
                 return (
                   <div key={i} className="grid sm:grid-cols-4 gap-4 border-t pt-4 items-start">
                     {/* Producto */}
