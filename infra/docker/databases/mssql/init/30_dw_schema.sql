@@ -520,7 +520,7 @@ BEGIN
         ON cm.codigo_supabase = dp.SourceKey 
         AND dp.SourceSystem = 'supabase'
     WHERE COALESCE(mp.sku_oficial, dp.SKU) IS NOT NULL
-    ORDER BY SKU, cm.sku_supabase;
+    ORDER BY SKU, cm.codigo_supabase;
 
     -- Limpiar tabla temporal
     DROP TABLE #codigos_supabase;

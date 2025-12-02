@@ -318,8 +318,9 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
 
   const getProductNames = (jsonString: string): string[] => {
   try {
-    const products: Producto[] = JSON.parse(jsonString);
-    return products.map(p => p.nombre || p.sku || p.producto_id || "");
+    // El stored procedure devuelve SKU, Nombre, CodigoSupa (PascalCase)
+    const products = JSON.parse(jsonString) as Array<{SKU?: string; Nombre?: string; CodigoSupa?: string}>;
+    return products.map(p => p.Nombre || p.SKU || p.CodigoSupa || "");
   } catch {
     return [];
   }
