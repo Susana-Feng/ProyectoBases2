@@ -352,6 +352,11 @@ configure_mssql_dw_env() {
 		return
 	fi
 
+	# Ensure file ends with newline before appending
+	if [[ -s "$env_file" ]] && [[ "$(tail -c 1 "$env_file")" != "" ]]; then
+		printf '\n' >> "$env_file"
+	fi
+
 	# Update or add MSSQL_DW_* variables
 	local vars=("MSSQL_DW_HOST=$host" "MSSQL_DW_PORT=$port" "MSSQL_DW_USER=$user" "MSSQL_DW_PASS=$pass" "MSSQL_DW_DB=$db")
 	for var in "${vars[@]}"; do
