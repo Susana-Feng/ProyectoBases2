@@ -414,3 +414,44 @@ BEGIN
 END;
 
 GO
+
+-- 9.3) Obtener SKUs equivalentes a una lista de códigos SKU de supabase
+-- Usa map_producto para encontrar el SKU canónico a partir del SKU en supabase
+IF OBJECT_ID('dw.sp_obtener_skus_por_sku_supabase','P') IS NOT NULL
+    DROP PROCEDURE dw.sp_obtener_skus_por_sku_supabase;
+GO
+CREATE OR ALTER PROCEDURE dw.sp_obtener_skus_por_sku_supabase
+    @lista_sku_supabase NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Tabla temporal para sku's de supabase de entrada
+    CREATE TABLE #skus_supabase (sku_supabase NVARCHAR(128) PRIMARY KEY);
+    
+    -- Insertar y limpiar los sku de supabase
+    INSERT INTO #skus_supabase (sku_supabase)
+    SELECT DISTINCT LTRIM(RTRIM(value)) 
+    FROM STRING_SPLIT(@lista_sku_supabase, ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+
+    -- Consulta para obtener los SKUs equivalentes via map_producto
+    -- El sku de supabase está en map_producto con source_system = 'supabase'
+    SELECT 
+        cm.sku_supabase AS SkuSupabase,
+        COALESCE(mp.sku_oficial, dp.SKU) AS SKU
+    FROM #skus_supabase cm
+    LEFT JOIN stg.map_producto mp 
+        ON cm.sku_supabase = mp.source_code 
+        AND mp.source_system = 'supabase'
+    LEFT JOIN dw.DimProducto dp 
+        ON cm.sku_supabase = dp.SourceKey 
+        AND dp.SourceSystem = 'supabase'
+    WHERE COALESCE(mp.sku_oficial, dp.SKU) IS NOT NULL
+    ORDER BY SKU, cm.sku_supabase;
+
+    -- Limpiar tabla temporal
+    DROP TABLE #skus_supabase;
+END;
+
+GO

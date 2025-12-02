@@ -24,6 +24,7 @@ import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { API_BASE_URL } from "@/lib/env";
 
+const apiBaseUrl = API_BASE_URL;
 
 // Tipos basados en Orders.tsx
 interface Producto {
@@ -75,6 +76,31 @@ interface CreateOrderDialogProps {
   onCreate: (newOrder: Orden) => Promise<void>;
 }
 
+interface ConsequentRule {
+  Antecedent: string;
+  Consequent: string;
+  Support: number;
+  Confidence: number;
+  Lift: number;
+  SourceKeysAntecedentes: string; // JSON con SourceKeys de antecedentes
+  SourceKeysConsecuentes: string; // JSON con SourceKeys de consecuentes
+}
+
+interface ConsequentsResponse {
+  rules: ConsequentRule[];
+  count: number;
+}
+
+interface SkuMapping {
+  SKU: string;
+  CodigoMongo: string;
+}
+
+interface MappingsResponse {
+  mappings: SkuMapping[];
+  count: number;
+}
+
 async function fetchJson(url: string, method: string = "GET", payload?: any) {
   const res = await fetch(url, {
     method,
@@ -100,6 +126,9 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [consequents, setConsequents] = useState<ConsequentsResponse | null>(null);
+  const [loadingConsequents, setLoadingConsequents] = useState(false);
+  const [skuMappings, setSkuMappings] = useState<SkuMapping[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -209,6 +238,86 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
     setForm((prev) => ({ ...prev, [path]: value }));
   };
 
+    /* ----------------------------- Obtener skus de supabase de los productos seleccionados ----------------------------- */
+  const getSelectedSkusSupabase = useMemo(() => {
+    const skusSupabase: string[] = [];
+    form.items?.forEach(item => {
+      if (item.producto_id) {
+        const producto = productos.find(p => p.sku === item.producto_id);
+        if (producto && producto.sku) {
+          skusSupabase.push(producto.sku);
+        }
+      }
+    });
+    return skusSupabase;
+  }, [form.items, productos]);
+
+    /* ----------------------------- Convertir códigos Supabase a SKUs oficiales ----------------------------- */
+  const convertCodigosSupabaseToSkus = async (skusSupabase: string[]): Promise<string[]> => {
+    if (skusSupabase.length === 0) return [];
+    
+    try {
+      const codigosParam = skusSupabase.join(',');
+      const response = await fetch(`${apiBaseUrl}/products/by-codigos-supabase?skus=${codigosParam}`);
+      
+      if (!response.ok) {
+        throw new Error(`Error: ${response.status}`);
+      }
+      
+      const data: MappingsResponse = await response.json();
+      setSkuMappings(data.mappings);
+      
+      // Extraer solo los SKUs para el siguiente paso
+      return data.mappings.map(mapping => mapping.SKU);
+    } catch (error) {
+      console.error("Error convirtiendo códigos Supabase a SKUs:", error);
+      return [];
+    }
+  };
+
+  /* ----------------------------- Obtener consecuentes ----------------------------- */
+  const fetchConsequents = async () => {
+    if (getSelectedSkusSupabase.length === 0) return;
+    
+    setLoadingConsequents(true);
+    try {
+
+      const skus = await convertCodigosSupabaseToSkus(getSelectedSkusSupabase);
+      
+      if (skus.length === 0) {
+        throw new Error("No se pudieron convertir los códigos Supabase a SKUs");
+      }
+
+      // SEGUNDO: Usar los SKUs para obtener los consecuentes
+      const skusParam = skus.join(',');
+      const response = await fetch(`${apiBaseUrl}/products/by-skus?skus=${skusParam}`);
+      
+      if (!response.ok) {
+        throw new Error(`Error: ${response.status}`);
+      }
+      
+      const data: ConsequentsResponse = await response.json();
+      setConsequents(data);
+    } catch (error) {
+      console.error("Error obteniendo consecuentes:", error);
+      setConsequents({
+        rules: [],
+        count: 0
+      });
+    } finally {
+      setLoadingConsequents(false);
+    }
+  };
+
+  const getProductNames = (jsonString: string): string[] => {
+  try {
+    const products: Producto[] = JSON.parse(jsonString);
+    return products.map(p => p.nombre || p.sku || "");
+  } catch {
+    return [];
+  }
+};
+
   /* ----------------------------- Cálculo automático del total ----------------------------- */
   const computedTotal = useMemo(() => {
     return form.items.reduce(
@@ -253,6 +362,10 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
     
     return true;
   }, [form]);
+
+  // Habilitar botón de consecuentes solo cuando hay al menos un producto seleccionado
+  const canShowConsequents = getSelectedSkusSupabase.length > 0;
+
 
   /* ----------------------------- Guardar ----------------------------- */
   const handleCreate = async () => {
@@ -408,92 +521,150 @@ export function CreateOrderDialog({ open, onClose, onCreate }: CreateOrderDialog
               <CardTitle className="text-neutral-700 dark:text-neutral-300">
                 Items
               </CardTitle>
-              <Button variant="outline" size="sm" onClick={addItem} disabled={localLoading}>
-                Agregar Item
-              </Button>
+              <div className="flex gap-2">
+                {/* Botón para obtener consecuentes */}
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={fetchConsequents}
+                  disabled={!canShowConsequents || loadingConsequents}
+                >
+                  {loadingConsequents ? "Cargando..." : "Ver Recomendaciones"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={addItem} disabled={localLoading}>
+                  Agregar Item
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {form.items.length === 0 && (
                 <p className="text-sm text-neutral-500">No hay items agregados.</p>
               )}
-              {form.items.map((item, i) => (
-                <div key={i} className="grid sm:grid-cols-4 gap-4 border-t pt-4 items-start">
-                  {/* Producto */}
-                  <div className="sm:col-span-2 min-w-0">
-                    <Label className= "mb-2">Producto</Label>
-                    <Select
-                      value={item.producto_id}
-                      onValueChange={(v) => handleChange(`items.${i}.producto_id`, v)}
-                      disabled={localLoading}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue className="truncate block">
-                          {item.producto?.nombre || "Seleccionar producto"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {productos.map((p) => (
-                          <SelectItem key={p.producto_id} value={p.producto_id} className="truncate">
-                            {p.nombre}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {errors[`items.${i}.producto_id`] && (
-                      <p className="text-sm text-red-600 mt-1">{errors[`items.${i}.producto_id`]}</p>
-                    )}
-                  </div>
+              {form.items.map((item, i) => {
+                const producto = productos.find(p => p.sku === item.producto_id);
+                return (
+                  <div key={i} className="grid sm:grid-cols-4 gap-4 border-t pt-4 items-start">
+                    {/* Producto */}
+                    <div className="sm:col-span-2 min-w-0">
+                      <Label className= "mb-2">Producto</Label>
+                      <Select
+                        value={item.producto_id}
+                        onValueChange={(v) => handleChange(`items.${i}.producto_id`, v)}
+                        disabled={localLoading}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue className="truncate block">
+                            {item.producto?.nombre || "Seleccionar producto"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {productos.map((p) => (
+                            <SelectItem key={p.producto_id} value={p.producto_id} className="truncate">
+                              {p.nombre}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {errors[`items.${i}.producto_id`] && (
+                        <p className="text-sm text-red-600 mt-1">{errors[`items.${i}.producto_id`]}</p>
+                      )}
+                    </div>
 
-                  {/* Cantidad */}
-                  <div className="min-w-0">
-                    <Label className= "mb-2">Cantidad</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={item.cantidad}
-                      onChange={(e) =>
-                        handleChange(`items.${i}.cantidad`, Number(e.target.value))
-                      }
-                      disabled={localLoading}
-                    />
-                    {errors[`items.${i}.cantidad`] && (
-                      <p className="text-sm text-red-600 mt-1">{errors[`items.${i}.cantidad`]}</p>
-                    )}
-                  </div>
+                    {/* Cantidad */}
+                    <div className="min-w-0">
+                      <Label className= "mb-2">Cantidad</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={item.cantidad}
+                        onChange={(e) =>
+                          handleChange(`items.${i}.cantidad`, Number(e.target.value))
+                        }
+                        disabled={localLoading}
+                      />
+                      {errors[`items.${i}.cantidad`] && (
+                        <p className="text-sm text-red-600 mt-1">{errors[`items.${i}.cantidad`]}</p>
+                      )}
+                    </div>
 
-                  {/* Precio unitario */}
-                  <div className="min-w-0">
-                    <Label className= "mb-2 ">Precio Unit</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={item.precio_unitario}
-                      onChange={(e) =>
-                        handleChange(`items.${i}.precio_unitario`, Number(e.target.value))
-                      }
-                      disabled={localLoading}
-                    />
-                    {errors[`items.${i}.precio_unitario`] && (
-                      <p className="text-sm text-red-600 mt-1">{errors[`items.${i}.precio_unitario`]}</p>
-                    )}
-                  </div>
+                    {/* Precio unitario */}
+                    <div className="min-w-0">
+                      <Label className= "mb-2 ">Precio Unit</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.precio_unitario}
+                        onChange={(e) =>
+                          handleChange(`items.${i}.precio_unitario`, Number(e.target.value))
+                        }
+                        disabled={localLoading}
+                      />
+                      {errors[`items.${i}.precio_unitario`] && (
+                        <p className="text-sm text-red-600 mt-1">{errors[`items.${i}.precio_unitario`]}</p>
+                      )}
+                    </div>
 
-                  {/* Eliminar */}
-                  <div className="flex items-center">
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => removeItem(i)}
-                      disabled={localLoading}
-                    >
-                      Eliminar
-                    </Button>
+                    {/* Eliminar */}
+                    <div className="flex items-center">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => removeItem(i)}
+                        disabled={localLoading}
+                      >
+                        Eliminar
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
+          {/* Resultados de Consequentes */}
+          {consequents && (
+            <Card className="mb-4 border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20">
+              <CardHeader>
+                <CardTitle className="text-base text-blue-700 dark:text-blue-300">
+                  Productos Recomendados
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {consequents.count === 0 ? (
+                  <p className="text-sm text-blue-600 dark:text-blue-400">
+                    No se encontraron recomendaciones para los productos seleccionados.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {consequents.rules.map((rule, index) => {
+                      const antecedentProductNames = getProductNames(rule.SourceKeysAntecedentes);
+                      const consequentProductNames = getProductNames(rule.SourceKeysConsecuentes);
+                      
+                      return (
+                        <div key={index} className="p-3 border border-blue-200 dark:border-blue-700 rounded-lg bg-white dark:bg-gray-800">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <p className="font-medium text-blue-700 dark:text-blue-300 mb-1">
+                                Si compras: {antecedentProductNames.join(', ')}
+                              </p>
+                              <p className="text-green-600 dark:text-green-400 font-semibold mb-2">
+                                También podrías comprar: {consequentProductNames.join(', ')}
+                              </p>
+                            </div>
+                            <div className="text-right text-sm text-gray-600 dark:text-gray-400 ml-4">
+                              <div className="font-medium">Confianza: {(rule.Confidence * 100).toFixed(1)}%</div>
+                              <div>Support: {(rule.Support * 100).toFixed(1)}%</div>
+                              <div>Lift: {rule.Lift.toFixed(2)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </ScrollArea>
 
         {/* Total */}

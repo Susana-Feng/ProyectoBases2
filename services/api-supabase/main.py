@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from config.database import supabase
+from config.database import supabase, get_mssql_connection
 from routes.orders import router as orders_router
 from routes.clients import router as clients_router
 from routes.products import router as products_router
@@ -19,6 +19,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    app.state.mssql_connection = get_mssql_connection()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    mssql_connection = getattr(app.state, "mssql_connection", None)
+    if mssql_connection:
+        try:
+            mssql_connection.close()
+        except Exception:
+            pass
 
 # Include routers (each router can have its own prefix)
 app.include_router(orders_router)
