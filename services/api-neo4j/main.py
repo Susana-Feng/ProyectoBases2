@@ -1,4 +1,5 @@
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config.database import get_neo4j_driver
@@ -9,6 +10,8 @@ from routes.products import router as products_router
 app = FastAPI(title="Neo4j Web API", root_path="/api/neo4j")
 
 DEFAULT_PORT = 3003
+
+logging.basicConfig(level=os.getenv("NEO4J_LOG_LEVEL", "INFO"))
 
 # CORS
 app.add_middleware(

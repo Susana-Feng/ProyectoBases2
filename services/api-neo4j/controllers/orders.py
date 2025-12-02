@@ -1,11 +1,68 @@
+import logging
 from typing import List, Dict, Any
 from fastapi import HTTPException
 from schemas.orders import Order
 from repositories.orders import OrderRepository
 from neo4j.time import DateTime  # Importar el tipo de fecha de Neo4j
 
+logger = logging.getLogger(__name__)
+
 
 class OrdersController:
+    @staticmethod
+    def _normalize_id(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @staticmethod
+    def _normalize_items(items: List[Any]) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+        for item in items:
+            producto_id = (
+                item.get("producto_id")
+                if isinstance(item, dict)
+                else getattr(item, "producto_id", "")
+            )
+            cantidad = (
+                item.get("cantidad")
+                if isinstance(item, dict)
+                else getattr(item, "cantidad", None)
+            )
+            precio_unit = (
+                item.get("precio_unit")
+                if isinstance(item, dict)
+                else getattr(item, "precio_unit", None)
+            )
+
+            normalized.append(
+                {
+                    "producto_id": OrdersController._normalize_id(producto_id),
+                    "cantidad": cantidad,
+                    "precio_unit": precio_unit,
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _validate_references(cliente_id: str, items: List[Dict[str, Any]]):
+        if not OrderRepository.client_exists(cliente_id):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Cliente {cliente_id} no existe en Neo4j",
+            )
+
+        missing_products = OrderRepository.missing_product_ids(
+            [item.get("producto_id") for item in items]
+        )
+        if missing_products:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "Productos no encontrados en Neo4j: " + ", ".join(missing_products)
+                ),
+            )
+
     @staticmethod
     def get_all_orders(skip: int = 0, limit: int = 10):
         try:
@@ -16,11 +73,13 @@ class OrdersController:
             # Leer datos paginados desde Neo4j
             orders_data = OrderRepository.read_orders(skip=skip, limit=limit)
             processed_orders = OrdersController._process_orders_data(orders_data)
+            total = OrderRepository.count_orders()
 
             # Retornar resultado estructurado
             return {
                 "skip": skip,
                 "limit": limit,
+                "total": total,
                 "count": len(processed_orders),
                 "data": processed_orders,
             }
@@ -79,44 +138,60 @@ class OrdersController:
         last_id = OrderRepository.get_last_order_id()
 
         if not last_id:
-            return "O001"
+            return "ORD-000001"
 
         import re
 
-        match = re.match(r"O(\d+)", last_id)
+        def _make_id(prefix: str, number: int, width: int) -> str:
+            return f"{prefix}{number:0{width}d}"
+
+        match = re.match(r"(ORD-)(\d+)", last_id) or re.match(r"(O)(\d+)", last_id)
         if match:
-            number = int(match.group(1))
+            prefix = match.group(1)
+            digits = match.group(2)
+            number = int(digits)
+            width = len(digits)
+
             # Probar los siguientes N IDs
             for i in range(1, max_attempts + 1):
-                potential_id = f"O{number + i:03d}"
+                potential_id = _make_id(prefix, number + i, width)
                 existing = OrderRepository.read_order_by_id(potential_id)
                 if not existing:
                     return potential_id
 
-        # Si no encuentra después de max_attempts, buscar desde el principio
-        return OrdersController._find_first_available_gap(max_attempts)
+        # Si no encuentra después de max_attempts, reiniciar buscando huecos
+        fallback_prefix = "ORD-"
+        fallback_width = 6
+        for i in range(1, max_attempts + 1):
+            potential_id = _make_id(fallback_prefix, i, fallback_width)
+            existing = OrderRepository.read_order_by_id(potential_id)
+            if not existing:
+                return potential_id
+
+        # Último recurso: usar timestamp para no bloquear la inserción
+        from datetime import datetime
+
+        fallback = datetime.utcnow().strftime("ORD%Y%m%d%H%M%S")
+        return fallback
 
     @staticmethod
     def create_order(order_data: Order):
+        logger.info(
+            "Creating Neo4j order",
+            extra={"cliente_id": order_data.cliente_id, "items": len(order_data.items)},
+        )
         try:
-            # Generar ID automáticamente
             auto_generated_id = OrdersController._find_next_available_order_id()
-            print(f"ID generado: {auto_generated_id}")  # Debug
+            print(f"ID generado: {auto_generated_id}")
 
-            # Preparar items para Neo4j
-            items_for_neo4j = [
-                {
-                    "producto_id": item.producto_id,
-                    "cantidad": item.cantidad,
-                    "precio_unit": item.precio_unit,
-                }
-                for item in order_data.items
-            ]
+            cliente_id = OrdersController._normalize_id(order_data.cliente_id)
+            items_for_neo4j = OrdersController._normalize_items(order_data.items)
 
-            # Crear la orden en la base de datos con el ID automático
+            OrdersController._validate_references(cliente_id, items_for_neo4j)
+
             success = OrderRepository.create_order(
                 id=auto_generated_id,
-                cliente_id=order_data.cliente_id,
+                cliente_id=cliente_id,
                 fecha=order_data.fecha,
                 canal=order_data.canal.value,
                 moneda=order_data.moneda.value,
@@ -134,15 +209,21 @@ class OrdersController:
                     status_code=500, detail="Failed to create order in database"
                 )
 
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            logger.error("Neo4j create_order validation failed", exc_info=True)
+            raise exc
         except Exception as e:
+            logger.exception("Neo4j create_order unexpected error")
             raise HTTPException(
                 status_code=500, detail=f"Error creating order: {str(e)}"
             )
 
     @staticmethod
     def update_order(order_id: str, order_data: Order):
+        logger.info(
+            "Updating Neo4j order",
+            extra={"order_id": order_id, "cliente_id": order_data.cliente_id},
+        )
         try:
             # Verificar que la orden existe
             existing_order = OrderRepository.read_order_by_id(order_id)
@@ -151,22 +232,17 @@ class OrdersController:
                     status_code=404, detail=f"Orden {order_id} not found"
                 )
 
-            # Preparar items para Neo4j
-            items_for_neo4j = [
-                {
-                    "producto_id": item.producto_id,
-                    "cantidad": item.cantidad,
-                    "precio_unit": item.precio_unit,
-                }
-                for item in order_data.items
-            ]
+            cliente_id = OrdersController._normalize_id(order_data.cliente_id)
+            items_for_neo4j = OrdersController._normalize_items(order_data.items)
+
+            OrdersController._validate_references(cliente_id, items_for_neo4j)
 
             # Actualizar la orden - usar la versión corregida
             success = OrderRepository.update_order_with_relationships(
                 id=order_id,
                 fecha=order_data.fecha,
                 canal=order_data.canal.value,
-                cliente_id=order_data.cliente_id,
+                cliente_id=cliente_id,
                 moneda=order_data.moneda.value,
                 total=order_data.total,
                 items=items_for_neo4j,
@@ -179,9 +255,15 @@ class OrdersController:
                     status_code=500, detail="Failed to update order in database"
                 )
 
-        except HTTPException:
-            raise
+        except HTTPException as exc:
+            logger.error(
+                "Neo4j update_order validation failed",
+                extra={"order_id": order_id},
+                exc_info=True,
+            )
+            raise exc
         except Exception as e:
+            logger.exception("Neo4j update_order unexpected error")
             raise HTTPException(
                 status_code=500, detail=f"Error updating order: {str(e)}"
             )

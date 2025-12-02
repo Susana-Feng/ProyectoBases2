@@ -49,10 +49,10 @@ export default function Orders() {
   const [currentPage, setCurrentPage] = useState(1);
   const [ordersPerPage, setOrdersPerPage] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
   const [editingOrder, setEditingOrder] = useState<Orden | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [allOrders, setAllOrders] = useState<Orden[]>([]);
 
   async function fetchJson<T>(url: string, method: string = "GET", payload?: any): Promise<T> {
     const options: RequestInit = {
@@ -81,88 +81,75 @@ export default function Orders() {
     return res.json() as Promise<T>;
   }
 
-  // Función para cargar todas las órdenes
-  async function loadAllOrders() {
+  async function loadOrders(pageArg?: number, perPageArg?: number) {
+    const perPage = perPageArg ?? ordersPerPage;
+    const page = pageArg ?? currentPage;
     setLoading(true);
     setError(null);
     try {
-      console.log('📊 Cargando todas las órdenes...');
+      const safePerPage = Math.max(1, perPage);
+      const safePage = Math.max(1, page);
+      const offset = (safePage - 1) * safePerPage;
 
-      // Cargar una cantidad grande de órdenes para determinar el total
-      const response = await fetchJson(`${obtenerOrdenes}?offset=0&limit=1000`);
-      const rows = Array.isArray(response) ? response : [];
+      console.log(`📊 Cargando órdenes offset=${offset}, limit=${safePerPage}`);
+      const response = await fetchJson(`${obtenerOrdenes}?offset=${offset}&limit=${safePerPage}`);
+      const envelope: any = response;
 
-      // Agrupar items por orden_id
-      const ordersMap = new Map<string, any>();
-      for (const item of rows) {
-        if (!ordersMap.has(item.orden_id)) {
-          ordersMap.set(item.orden_id, {
-            orden_id: item.orden_id,
-            fecha: item.fecha,
-            canal: item.canal,
-            moneda: item.moneda,
-            total: item.total,
-            cliente: {
-              cliente_id: item.cliente_id,
-              nombre: item.nombre_cliente,
-            },
-            items: [],
-          });
-        }
-        const order = ordersMap.get(item.orden_id);
-        order.items.push({
+      const rows = Array.isArray(envelope?.data)
+        ? envelope.data
+        : Array.isArray(envelope)
+        ? envelope
+        : [];
+
+      const formatted: Orden[] = rows.map((order: any) => ({
+        orden_id: order.orden_id,
+        fecha: order.fecha,
+        canal: order.canal,
+        moneda: order.moneda,
+        total: order.total,
+        cliente: order.cliente || {
+          cliente_id: order.cliente?.cliente_id ?? order.cliente_id,
+          nombre: order.cliente?.nombre ?? order.nombre_cliente,
+        },
+        items: (order.items || []).map((item: any) => ({
           producto_id: item.producto_id,
           cantidad: item.cantidad,
           precio_unitario: item.precio_unitario,
-          producto: {
-            producto_id: item.producto_id,
-            nombre: item.nombre_producto,
+          producto: item.producto || {
+            producto_id: item.producto?.producto_id ?? item.producto_id,
+            nombre: item.producto?.nombre ?? item.nombre_producto,
           },
-        });
-      }
+        })),
+      }));
 
-      const allOrdersArray = Array.from(ordersMap.values());
-      console.log(`✅ ${allOrdersArray.length} órdenes totales encontradas`);
+      const total = typeof envelope?.total === "number" ? envelope.total : formatted.length;
+      const totalCalculatedPages = Math.max(1, Math.ceil(total / safePerPage));
 
-      setAllOrders(allOrdersArray);
-      updatePagination(allOrdersArray, ordersPerPage, 1);
+      console.log(
+        `📄 Página ${safePage} de ${totalCalculatedPages}, mostrando ${formatted.length} órdenes (total=${total})`
+      );
 
+      setOrders(formatted);
+      setTotalOrders(total);
+      setTotalPages(totalCalculatedPages);
+      setCurrentPage(safePage);
     } catch (err: any) {
-      console.error('❌ Error loading all orders:', err);
+      console.error('❌ Error al cargar órdenes paginadas:', err);
       setError(err.message || String(err));
     } finally {
       setLoading(false);
     }
   }
 
-  // Función para actualizar la paginación basada en las órdenes y configuración actual
-  function updatePagination(ordersArray: Orden[], perPage: number, page: number) {
-    // Calcular el total de páginas
-    const calculatedTotalPages = Math.ceil(ordersArray.length / perPage);
-    setTotalPages(calculatedTotalPages);
-
-    // Calcular el rango de órdenes para la página actual
-    const startIndex = (page - 1) * perPage;
-    const endIndex = startIndex + perPage;
-    const currentPageOrders = ordersArray.slice(startIndex, endIndex);
-
-    console.log(`📄 Página ${page} de ${calculatedTotalPages}, mostrando ${currentPageOrders.length} órdenes de ${ordersArray.length} totales`);
-
-    setOrders(currentPageOrders);
-    setCurrentPage(page);
-  }
-
-  // Función para cambiar de página
   function goToPage(page: number) {
     if (page < 1 || page > totalPages) return;
-    updatePagination(allOrders, ordersPerPage, page);
+    loadOrders(page, ordersPerPage);
   }
 
-  // Función para cambiar el número de órdenes por página
   function handleOrdersPerPageChange(newLimit: number) {
-    setOrdersPerPage(newLimit);
-    // Reiniciar a la página 1 con el nuevo límite
-    updatePagination(allOrders, newLimit, 1);
+    const limit = Math.max(1, newLimit);
+    setOrdersPerPage(limit);
+    loadOrders(1, limit);
   }
 
   // --- Crear orden ---
@@ -204,8 +191,8 @@ export default function Orders() {
         throw new Error(`Error al crear orden: ${errorText}`);
       }
       
-      // Recargar todas las órdenes
-      await loadAllOrders();
+      await loadOrders(1, ordersPerPage);
+      setCreateDialogOpen(false);
       
     } catch (err: any) {
       setError(err.message || String(err));
@@ -258,14 +245,7 @@ export default function Orders() {
         throw new Error(`Error al actualizar orden: ${errorText}`);
       }
       
-      // Actualizar en el estado local
-      const updatedAllOrders = allOrders.map(order => 
-        order.orden_id === edited.orden_id ? edited : order
-      );
-      setAllOrders(updatedAllOrders);
-      
-      // Actualizar la vista actual manteniendo la página y límite actual
-      updatePagination(updatedAllOrders, ordersPerPage, currentPage);
+      await loadOrders(currentPage, ordersPerPage);
       
     } catch (err: any) {
       console.error('Error completo:', err);
@@ -298,8 +278,10 @@ export default function Orders() {
         throw new Error(`Error al eliminar orden: ${errorText}`);
       }
       
-      // Recargar todas las órdenes
-      await loadAllOrders();
+      const remaining = totalOrders - 1;
+      const maxPage = Math.max(1, Math.ceil(remaining / ordersPerPage));
+      const nextPage = Math.min(currentPage, maxPage);
+      await loadOrders(nextPage, ordersPerPage);
     } catch (err: any) {
       setError(err.message || String(err));
     } finally {
@@ -311,7 +293,7 @@ export default function Orders() {
   const hasPrevPage = currentPage > 1;
 
   useEffect(() => {
-    loadAllOrders();
+    loadOrders(1, ordersPerPage);
   }, []);
 
     return (

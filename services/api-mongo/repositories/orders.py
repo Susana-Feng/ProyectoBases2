@@ -33,6 +33,10 @@ class orderRepository:
         return orders
 
     @staticmethod
+    def count(filter_query: Optional[dict] = None) -> int:
+        return orders_collection.count_documents(filter_query or {})
+
+    @staticmethod
     def update(order_id: str, update_data: dict) -> bool:
         obj = _parse_objectid(order_id)
         if obj is None:

@@ -164,18 +164,14 @@ export default function Orders() {
       const userLimit = typeof limitArg === "number" ? limitArg : limit;
       const userSkip = typeof skipArg === "number" ? skipArg : skip;
 
-      // Traer todas las órdenes (limit infinito o muy alto)
-      const url = `${rutaBase}/?skip=0&limit=9999`;
+      const url = `${rutaBase}/?skip=${userSkip}&limit=${userLimit}`;
       const data = await fetchJson(url);
 
-      const allOrders = data?.data ?? [];
-      const totalOrders = allOrders.length;
-
-      // Aplicar paginación local según skip y limit del usuario
-      const pagedOrders = allOrders.slice(userSkip, userSkip + userLimit);
+      const apiOrders = data?.data ?? [];
+      const totalOrders = typeof data?.total === "number" ? data.total : apiOrders.length;
 
       // Formatear para el frontend
-      const formatted = pagedOrders.map((o: any) => ({
+      const formatted = apiOrders.map((o: any) => ({
         _id: o.id,
         id: o.id,
         fecha: o.fecha,
