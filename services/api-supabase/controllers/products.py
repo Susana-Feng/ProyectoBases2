@@ -40,16 +40,16 @@ class ProductsController:
             raise Exception(f"Error al obtener consecuentes: {str(e)}")
         
     @staticmethod
-    def get_skus_by_skus_supabase(skus_supabase: List[str], db_connection: pyodbc.Connection) -> Dict[str, Any]:
+    def get_skus_by_codes_supabase(codes_supabase: List[str], db_connection: pyodbc.Connection) -> Dict[str, Any]:
         try:
-            # Convertir lista de skus de supabase a string separado por comas
-            codigos_string = ','.join(skus_supabase)
+            # Convertir lista de codigos de supabase a string separado por comas
+            codigos_string = ','.join(codes_supabase)
             
             # Validación básica
             if not codigos_string.strip():
                 return {"mappings": [], "count": 0}  # Corregido: retornar estructura consistente
             
-            mappings = products_repository.get_skus_by_skus_supabase(db_connection, codigos_string)
+            mappings = products_repository.get_skus_by_code_supabase(db_connection, codigos_string)
             
             return {
                 "mappings": mappings,  

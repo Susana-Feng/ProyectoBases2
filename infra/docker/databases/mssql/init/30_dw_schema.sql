@@ -415,43 +415,115 @@ END;
 
 GO
 
--- 9.3) Obtener SKUs equivalentes a una lista de códigos SKU de supabase
--- Usa map_producto para encontrar el SKU canónico a partir del SKU en supabase
-IF OBJECT_ID('dw.sp_obtener_skus_por_sku_supabase','P') IS NOT NULL
-    DROP PROCEDURE dw.sp_obtener_skus_por_sku_supabase;
+-- 9.3) Obtener los principales 5 consecuentes para una lista dada de SKUs 
+IF OBJECT_ID('dw.sp_obtener_consecuentes','P') IS NOT NULL
+    DROP PROCEDURE dw.sp_obtener_consecuentes;
 GO
-CREATE OR ALTER PROCEDURE dw.sp_obtener_skus_por_sku_supabase
-    @lista_sku_supabase NVARCHAR(MAX)
+
+CREATE OR ALTER PROCEDURE dw.sp_obtener_consecuentes
+    @lista_skus NVARCHAR(MAX)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    -- Tabla temporal para sku's de supabase de entrada
-    CREATE TABLE #skus_supabase (sku_supabase NVARCHAR(128) PRIMARY KEY);
+    CREATE TABLE #skus_entrada (sku NVARCHAR(50) PRIMARY KEY);
+    
+    INSERT INTO #skus_entrada (sku)
+    SELECT DISTINCT LTRIM(RTRIM(value)) 
+    FROM STRING_SPLIT(@lista_skus, ',')
+    WHERE LTRIM(RTRIM(value)) <> '';
+
+    WITH ReglasFiltradas AS (
+        SELECT 
+            r.RuleID,
+            r.Antecedent,
+            r.Consequent,
+            r.Support,
+            r.Confidence,
+            r.Lift,
+            (SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') 
+             WHERE LTRIM(RTRIM(value)) <> '') as total_antecedentes,
+            (SELECT COUNT(DISTINCT LTRIM(RTRIM(value)))
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Antecedent, '(', ''), ')', ''), ',') a
+             INNER JOIN #skus_entrada se ON LTRIM(RTRIM(a.value)) = se.sku
+             WHERE LTRIM(RTRIM(a.value)) <> '') as antecedentes_en_lista,
+            (SELECT COUNT(*) FROM #skus_entrada) as total_en_lista,
+            (SELECT COUNT(*)
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
+             INNER JOIN #skus_entrada se ON LTRIM(RTRIM(c.value)) = se.sku
+             WHERE LTRIM(RTRIM(c.value)) <> '') as consecuentes_en_lista,
+            -- Incluir SKU, Nombre y CodigoSupa para antecedentes
+            (SELECT dp.SKU, dp.Nombre, mp.source_code AS CodigoSupa
+             FROM dw.DimProducto dp
+             INNER JOIN #skus_entrada se ON dp.SKU = se.sku
+             LEFT JOIN stg.map_producto mp ON dp.SKU = mp.sku_oficial AND mp.source_system = 'supabase'
+             FOR JSON PATH) AS source_keys_antecedentes,
+            -- Incluir SKU, Nombre y CodigoSupa para consecuentes
+            (SELECT DISTINCT dp.SKU, dp.Nombre, mp.source_code AS CodigoSupa
+             FROM STRING_SPLIT(REPLACE(REPLACE(r.Consequent, '(', ''), ')', ''), ',') c
+             INNER JOIN dw.DimProducto dp ON LTRIM(RTRIM(c.value)) = dp.SKU
+             LEFT JOIN stg.map_producto mp ON dp.SKU = mp.sku_oficial AND mp.source_system = 'supabase'
+             WHERE LTRIM(RTRIM(c.value)) <> ''
+             FOR JSON PATH) AS source_keys_consecuentes
+        FROM analytics.AssociationRules r
+    )
+    SELECT TOP 5
+        Antecedent,
+        Consequent,
+        Support,
+        Confidence,
+        Lift,
+        source_keys_antecedentes AS SourceKeysAntecedentes,
+        source_keys_consecuentes AS SourceKeysConsecuentes
+    FROM ReglasFiltradas
+    WHERE total_antecedentes > 0 
+        AND antecedentes_en_lista = total_antecedentes
+        AND total_en_lista = total_antecedentes
+        AND consecuentes_en_lista = 0
+    ORDER BY Confidence DESC, Lift DESC;
+
+    DROP TABLE #skus_entrada;
+END;
+GO
+
+-- 9.4) Obtener SKUs equivalentes a una lista de códigos uuid o sku de supabase
+-- Usa map_producto para encontrar el SKU canónico a partir del uuid o sku en supabase
+IF OBJECT_ID('dw.sp_obtener_skus_por_codigo_supabase','P') IS NOT NULL
+    DROP PROCEDURE dw.sp_obtener_skus_por_codigo_supabase;
+GO
+CREATE OR ALTER PROCEDURE dw.sp_obtener_skus_por_codigo_supabase
+    @lista_codigo_supabase NVARCHAR(MAX)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Tabla temporal para codigos de supabase de entrada
+    CREATE TABLE #codigos_supabase (codigo_supabase NVARCHAR(128) PRIMARY KEY);
     
     -- Insertar y limpiar los sku de supabase
-    INSERT INTO #skus_supabase (sku_supabase)
+    INSERT INTO #codigos_supabase (codigo_supabase)
     SELECT DISTINCT LTRIM(RTRIM(value)) 
-    FROM STRING_SPLIT(@lista_sku_supabase, ',')
+    FROM STRING_SPLIT(@lista_codigo_supabase, ',')
     WHERE LTRIM(RTRIM(value)) <> '';
 
     -- Consulta para obtener los SKUs equivalentes via map_producto
-    -- El sku de supabase está en map_producto con source_system = 'supabase'
+    -- El codigo de supabase está en map_producto con source_system = 'supabase'
     SELECT 
-        cm.sku_supabase AS SkuSupabase,
+        cm.codigo_supabase AS CodigoSupabase,
         COALESCE(mp.sku_oficial, dp.SKU) AS SKU
-    FROM #skus_supabase cm
+    FROM #codigos_supabase cm
     LEFT JOIN stg.map_producto mp 
-        ON cm.sku_supabase = mp.source_code 
+        ON cm.codigo_supabase = mp.source_code 
         AND mp.source_system = 'supabase'
     LEFT JOIN dw.DimProducto dp 
-        ON cm.sku_supabase = dp.SourceKey 
+        ON cm.codigo_supabase = dp.SourceKey 
         AND dp.SourceSystem = 'supabase'
     WHERE COALESCE(mp.sku_oficial, dp.SKU) IS NOT NULL
     ORDER BY SKU, cm.sku_supabase;
 
     -- Limpiar tabla temporal
-    DROP TABLE #skus_supabase;
+    DROP TABLE #codigos_supabase;
 END;
 
 GO

@@ -32,7 +32,7 @@ class productsRepository:
             cursor = db_connection.cursor()
             print(f"Ejecutando stored procedure con SKUs: {skus_list}")
             # Ejecutar el stored procedure
-            cursor.execute("EXEC dw.sp_obtener_consecuentes_por_skus ?", skus_list)        
+            cursor.execute("EXEC dw.sp_obtener_consecuentes ?", skus_list)        
             # Obtener resultados
             rows = cursor.fetchall()
             # Convertir a lista de diccionarios
@@ -57,12 +57,12 @@ class productsRepository:
             raise Exception(f"Error inesperado: {str(e)}")
         
     @staticmethod
-    def get_skus_by_skus_supabase(db_connection: pyodbc.Connection, skus_list: str) -> List[Dict[str, Any]]:
+    def get_skus_by_code_supabase(db_connection: pyodbc.Connection, codes_list: str) -> List[Dict[str, Any]]:
         try:
             cursor = db_connection.cursor()
 
             # Ejecutar el stored procedure
-            cursor.execute("EXEC dw.sp_obtener_skus_por_sku_supabase ?", skus_list)        
+            cursor.execute("EXEC dw.sp_obtener_skus_por_codigo_supabase ?", codes_list)        
             # Obtener resultados
             rows = cursor.fetchall()
             # Convertir a lista de diccionarios
@@ -70,7 +70,7 @@ class productsRepository:
             for row in rows:
                 rule = {
                     "SKU": row.SKU,
-                    "SkuSupabase": row.SkuSupabase
+                    "CodigoSupabase": row.CodigoSupabase
                 }
                 rules.append(rule)    
             cursor.close()
