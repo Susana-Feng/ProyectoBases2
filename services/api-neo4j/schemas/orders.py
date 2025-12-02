@@ -12,15 +12,18 @@ class Genero(str, Enum):
     MASCULINO = "Masculino"
     FEMENINO = "Femenino"
 
+
 class Moneda(str, Enum):
     CRC = "CRC"
     USD = "USD"
+
 
 class canal(str, Enum):
     WEB = "WEB"
     TIENDA = "TIENDA"
     PARTNER = "PARTNER"
-     
+
+
 # --- MODELOS BASE ---
 class Cliente(BaseModel):
     id: str
@@ -28,9 +31,11 @@ class Cliente(BaseModel):
     genero: Genero
     pais: str
 
+
 class Categoria(BaseModel):
     id: str
     nombre: str
+
 
 class Producto(BaseModel):
     id: str
@@ -39,6 +44,7 @@ class Producto(BaseModel):
     sku: Optional[str] = None
     codigo_alt: Optional[str] = None
     codigo_mongo: Optional[str] = None
+
 
 # --- RELACIONES / SUBESQUEMAS ---
 class Item(BaseModel):
@@ -50,6 +56,7 @@ class Item(BaseModel):
 class OrdersPagination(BaseModel):
     skip: int = 0
     limit: int = 20
+
 
 # --- ORDER  ---
 class Order(BaseModel):

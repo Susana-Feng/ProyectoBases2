@@ -7,12 +7,11 @@ from routers.orders import router as orders_router
 from routers.clients import router as clients_router
 from routers.products import router as products_router
 
-app = FastAPI(title="MongoDB Web API",
-              root_path="/api/mongo")
+app = FastAPI(title="MongoDB Web API", root_path="/api/mongo")
 
 DEFAULT_PORT = 3002
 
-# CORS 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -49,6 +48,7 @@ async def shutdown_event():
 app.include_router(orders_router)
 app.include_router(clients_router)
 app.include_router(products_router)
+
 
 @app.get("/")
 async def root():

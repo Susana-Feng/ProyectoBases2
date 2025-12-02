@@ -4,11 +4,11 @@ from config.database import get_neo4j_driver
 driver = get_neo4j_driver()
 
 # --------------------------------------------------
-# CRUD Queries 
+# CRUD Queries
 # --------------------------------------------------
 
 # Queries actualizadas para retornar valores simples
-createOrderQuery = '''
+createOrderQuery = """
 // Crear la orden
 CREATE (o:Orden {
   id: $id,
@@ -34,9 +34,9 @@ CREATE (o)-[r:CONTIENE {
 
 // Retornar solo un valor simple para confirmación
 RETURN "success" AS result;
-'''
+"""
 
-updateOrderRelationshipsQuery = '''
+updateOrderRelationshipsQuery = """
 OPTIONAL MATCH (old:Orden {id: $id})
 DETACH DELETE old
 
@@ -65,9 +65,9 @@ CREATE (o)-[r:CONTIENE {
 
 // Retornar solo un valor simple para confirmación
 RETURN "success" AS result;
-'''
+"""
 
-readOrdersQuery = '''
+readOrdersQuery = """
 MATCH (c:Cliente)-[:REALIZO]->(o:Orden)-[r:CONTIENE]->(p:Producto)-[:PERTENECE_A]->(cat:Categoria)
 RETURN 
   o.id AS orden_id,
@@ -89,10 +89,10 @@ RETURN
 ORDER BY o.fecha ASC
 SKIP $skip
 LIMIT $limit;
-'''
+"""
 
 
-readOrderByIdQuery = '''
+readOrderByIdQuery = """
 MATCH (c:Cliente)-[:REALIZO]->(o:Orden {id: $id})-[r:CONTIENE]->(p:Producto)-[:PERTENECE_A]->(cat:Categoria)
 RETURN 
   o.id AS orden_id,
@@ -112,12 +112,12 @@ RETURN
   r.precio_unit AS precio_unit,
   (r.cantidad * r.precio_unit) AS subtotal
 ORDER BY o.fecha ASC;
-'''
+"""
 
-deleteOrderQuery = '''
+deleteOrderQuery = """
 MATCH (o:Orden {id: $id})
 DETACH DELETE o;
-'''
+"""
 
 getLastId = """
         MATCH (o:Orden)
@@ -126,11 +126,12 @@ getLastId = """
         ORDER BY o.id DESC
         LIMIT 1
         """
+
+
 # --------------------------------------------------
 # Class for CRUD operations on Orders
 # --------------------------------------------------
 class OrderRepository:
-
     @staticmethod
     def create_order(id, cliente_id, fecha, canal, moneda, total, items):
         """Crea una orden sin retornar resultados complejos"""
@@ -150,13 +151,13 @@ class OrderRepository:
                     canal=canal,
                     moneda=moneda,
                     total=total,
-                    items=items
+                    items=items,
                 )
-                
+
                 # Consumir el resultado dentro del contexto de la sesión
                 records = list(result)
                 return len(records) > 0  # Retorna True si se creó al menos un registro
-                
+
         except Exception as e:
             print(f"Error in create_order: {e}")
             return False
@@ -165,16 +166,11 @@ class OrderRepository:
     def read_orders(skip: int = 0, limit: int = 20):
         with driver.session() as session:
             try:
-                result = session.run(
-                    readOrdersQuery,
-                    skip=skip,
-                    limit=limit
-                )
+                result = session.run(readOrdersQuery, skip=skip, limit=limit)
                 return [record.data() for record in result]
             except Exception as e:
                 print(f"Error in read_orders: {e}")
                 return []
-
 
     @staticmethod
     def read_order_by_id(order_id):
@@ -198,7 +194,9 @@ class OrderRepository:
                 return False
 
     @staticmethod
-    def update_order_with_relationships(id, fecha, canal, cliente_id, moneda, total, items):
+    def update_order_with_relationships(
+        id, fecha, canal, cliente_id, moneda, total, items
+    ):
         if isinstance(fecha, datetime):
             fecha = fecha.isoformat()
         elif isinstance(fecha, date):
@@ -206,6 +204,7 @@ class OrderRepository:
 
         try:
             with driver.session() as session:
+
                 def update_order_tx(tx):
                     tx.run(
                         updateOrderRelationshipsQuery,
@@ -215,16 +214,17 @@ class OrderRepository:
                         canal=canal,
                         moneda=moneda,
                         total=total,
-                        items=items
+                        items=items,
                     )
                     return True
-                
+
                 session.execute_write(update_order_tx)
                 return True
-                
+
         except Exception as e:
             print(f"Error in update_order_with_relationships: {e}")
             return False
+
     @staticmethod
     def get_last_order_id():
         """Obtiene el último ID de orden numéricamente"""

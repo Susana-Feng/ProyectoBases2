@@ -4,7 +4,7 @@ from config.database import supabase
 def get_clients():
     try:
         response = supabase.table("cliente").select("*").execute()
-        
+
         # .execute() devuelve un APIResponse con .data
         if not response.data:
             print("⚠️ No se encontraron clientes o hubo error")
@@ -16,9 +16,9 @@ def get_clients():
     except Exception as e:
         print("❌ Excepción al obtener clientes:", e)
         return None
-    
+
+
 class ClientRepository:
-    
     @staticmethod
     def get_clients():
         return get_clients()

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from sqlalchemy import create_engine
 from neo4j import GraphDatabase
-from supabase import create_client, Client
+from supabase import create_client
 
 # Cargar variables de entorno
 load_dotenv(".env.local")
@@ -83,9 +83,11 @@ def get_mongo_database():
     client = get_mongo_client()
     return client[MONGO_DB]
 
+
 def get_supabase_client():
     client = create_client(SUPABASE_URI, SUPABASE_KEY)
     return client
+
 
 def get_neo4j_driver():
     uri = NEO4J_URI

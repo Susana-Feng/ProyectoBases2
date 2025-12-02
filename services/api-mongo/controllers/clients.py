@@ -1,4 +1,4 @@
-from typing import List, Any
+from typing import Any
 from fastapi import HTTPException
 from bson import ObjectId as BsonObjectId
 from repositories.clients import clientsRepository
@@ -6,11 +6,13 @@ from repositories.clients import clientsRepository
 # module-level repo (same as current)
 clients_repository = clientsRepository()
 
+
 class clientsController:
     @staticmethod
     def get_all_clients():
         clients = clients_repository.get_all()
         total = len(clients)
+
         # ensure any nested ObjectId values are converted to str
         def _convert(o: Any):
             if isinstance(o, BsonObjectId):
@@ -28,7 +30,10 @@ class clientsController:
     def get_cliente_by_id(cliente_id: str):
         cliente = clients_repository.get(cliente_id)
         if not cliente:
-            raise HTTPException(status_code=404, detail=f"Cliente {cliente_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Cliente {cliente_id} not found"
+            )
+
         # convert nested ObjectId values if any
         def _convert(o: Any):
             if isinstance(o, BsonObjectId):

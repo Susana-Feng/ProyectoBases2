@@ -1,11 +1,9 @@
-from datetime import datetime
-from schemas.orders import Order, PaginationParams
+from schemas.orders import Order
 from repositories.orders import OrderRepository
 from pydantic import ValidationError
 
 
 class OrdersController:
-
     @staticmethod
     def get_all_orders(offset: int = 0, limit: int = 10):
         try:
@@ -18,8 +16,8 @@ class OrdersController:
     @staticmethod
     def create_order(order: Order):
         try:
-        # Convertir objeto Order a dict
-            order_dict = order.dict() 
+            # Convertir objeto Order a dict
+            order_dict = order.dict()
 
             return OrderRepository.create_order(**order_dict)
         except ValidationError as ve:

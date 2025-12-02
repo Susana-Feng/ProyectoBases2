@@ -31,7 +31,7 @@ class orderRepository:
             doc["_id"] = str(doc["_id"])
             orders.append(doc)
         return orders
-    
+
     @staticmethod
     def update(order_id: str, update_data: dict) -> bool:
         obj = _parse_objectid(order_id)
@@ -48,12 +48,15 @@ class orderRepository:
         result = orders_collection.delete_one({"_id": obj})
         return result.deleted_count > 0
 
+
 def _parse_objectid(oid: str) -> Optional[ObjectId]:
     if not isinstance(oid, str):
         return None
     s = oid.strip()
     # strip wrapping single/double quotes if present
-    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+    if len(s) >= 2 and (
+        (s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")
+    ):
         s = s[1:-1].strip()
     try:
         return ObjectId(s)

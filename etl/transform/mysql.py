@@ -62,7 +62,7 @@ def find_sku_from_map_producto(source_code: str) -> str | None:
     with engine.connect() as conn:
         result = conn.execute(
             text(query_find_sku_by_source_code),
-            {"source_system": "mysql", "source_code": source_code}
+            {"source_system": "mysql", "source_code": source_code},
         )
         row = result.fetchone()
         if row:
@@ -79,12 +79,13 @@ def find_sku_by_name_category(nombre: str, categoria: str) -> str | None:
     with engine.connect() as conn:
         result = conn.execute(
             text(query_find_sku_by_name_category),
-            {"nombre_norm": nombre, "categoria_norm": categoria}
+            {"nombre_norm": nombre, "categoria_norm": categoria},
         )
         row = result.fetchone()
         if row:
             return row[0]
     return None
+
 
 # -----------------------------------------------------------------------
 #            Queries de SQL para transformación de datos de MySQL
@@ -378,7 +379,7 @@ def insert_map_producto(producto, sku_mapping):
     """
     Inserta un producto en la tabla stg.map_producto.
     Para MySQL, el source_code es el codigo_alt.
-    
+
     Neo4j ya pobló las equivalencias en map_producto, así que primero
     buscamos ahí. Si no existe, generamos un nuevo SKU.
 
@@ -395,12 +396,14 @@ def insert_map_producto(producto, sku_mapping):
     return result
 
 
-def insert_map_producto_batch(conn, producto, sku_mapping, eq_map: "EquivalenceMap" = None):
+def insert_map_producto_batch(
+    conn, producto, sku_mapping, eq_map: "EquivalenceMap" = None
+):
     """
     Batch version: Inserta un producto usando conexión existente (no commit).
-    
+
     Uses the equivalence map (built from ALL sources) to get the correct SKU.
-    
+
     Args:
         conn: Conexión activa de SQLAlchemy
         producto: Row con datos del producto
@@ -420,27 +423,27 @@ def insert_map_producto_batch(conn, producto, sku_mapping, eq_map: "EquivalenceM
         sku_oficial = sku_mapping[codigo_alt]
     else:
         sku_oficial = None
-        
+
         # Use equivalence map (preferred - has info from all sources)
         if eq_map:
             sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
-        
+
         # Fallback: Try to find in map_producto (for previously registered products)
         if not sku_oficial:
             sku_from_map = find_sku_from_map_producto(codigo_alt)
             if sku_from_map:
                 sku_oficial = sku_from_map
-        
+
         # Last resort: Try by name+category in database
         if not sku_oficial:
             sku_by_name = find_sku_by_name_category(nombre, categoria)
             if sku_by_name:
                 sku_oficial = sku_by_name
-        
+
         # Generate new if nothing found
         if not sku_oficial:
             sku_oficial = get_next_sku()
-        
+
         sku_mapping[codigo_alt] = sku_oficial
 
     conn.execute(
@@ -616,7 +619,9 @@ def _prepare_orden_item_params(orden, detalle, productos_dict):
 # -----------------------------------------------------------------------
 
 
-def transform_mysql(clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None):
+def transform_mysql(
+    clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None
+):
     """
     Transforma y carga los datos de MySQL en las tablas de staging.
     OPTIMIZED: Uses single connection and batch commits for 10x+ speed improvement.
@@ -642,17 +647,25 @@ def transform_mysql(clientes, productos, ordenes, orden_detalles, eq_map: "Equiv
             conn.execute(text(query_insert_clientes_stg), params)
             if (i + 1) % BATCH_SIZE == 0:
                 conn.commit()
-                print(f"\r    mysql: {i + 1}/{len(clientes)} clients...", end="", flush=True)
+                print(
+                    f"\r    mysql: {i + 1}/{len(clientes)} clients...",
+                    end="",
+                    flush=True,
+                )
         conn.commit()
 
         # 2. Process products (batch) - using equivalence map for SKU resolution
         productos_dict = {}
         for i, producto in enumerate(productos):
-            sku_oficial = insert_map_producto_batch(conn, producto, sku_mapping, eq_map)
+            insert_map_producto_batch(conn, producto, sku_mapping, eq_map)
             productos_dict[producto.id] = producto.codigo_alt
             if (i + 1) % BATCH_SIZE == 0:
                 conn.commit()
-                print(f"\r    mysql: {len(clientes)} clients | {i + 1}/{len(productos)} products...", end="", flush=True)
+                print(
+                    f"\r    mysql: {len(clientes)} clients | {i + 1}/{len(productos)} products...",
+                    end="",
+                    flush=True,
+                )
         conn.commit()
 
         # 3. Process order items (batch)
@@ -671,7 +684,8 @@ def transform_mysql(clientes, productos, ordenes, orden_detalles, eq_map: "Equiv
                         conn.commit()
                         print(
                             f"\r    mysql: {len(clientes)} clients | {len(productos)} products | {items_procesados}/{total_items} items...",
-                            end="", flush=True
+                            end="",
+                            flush=True,
                         )
                 except Exception:
                     errores += 1

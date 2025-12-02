@@ -235,10 +235,7 @@ def verificar_sku_existe(sku: str) -> str | None:
     try:
         engine = get_dw_engine()
         with engine.connect() as conn:
-            result = conn.execute(
-                text(query_find_sku_exists),
-                {"sku": sku}
-            )
+            result = conn.execute(text(query_find_sku_exists), {"sku": sku})
             row = result.fetchone()
             if row:
                 return row[0]
@@ -286,12 +283,19 @@ def validar_producto_en_stg(sku: str, nombre: str, categoria: str) -> bool:
         return False
 
 
-def insert_map_producto(producto_id, codigo_original, sku_nueva, nombre, categoria, eq_map: "EquivalenceMap" = None):
+def insert_map_producto(
+    producto_id,
+    codigo_original,
+    sku_nueva,
+    nombre,
+    categoria,
+    eq_map: "EquivalenceMap" = None,
+):
     """
     Inserta producto en map_producto.
-    
+
     Uses the equivalence map (built from ALL sources) to get the correct SKU.
-    
+
     Args:
         producto_id: UUID del producto en Supabase (usado como fallback source_code)
         codigo_original: SKU original de Supabase (puede ser None/vacío)
@@ -302,7 +306,7 @@ def insert_map_producto(producto_id, codigo_original, sku_nueva, nombre, categor
     """
     es_servicio = False
     sku_oficial = None
-    
+
     # Use equivalence map (preferred - has info from all sources)
     if eq_map:
         sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
@@ -311,7 +315,7 @@ def insert_map_producto(producto_id, codigo_original, sku_nueva, nombre, categor
             eq = eq_map.get_equivalence(nombre, categoria)
             if eq and eq.es_servicio:
                 es_servicio = True
-    
+
     # Fallback: Si tiene SKU, verificar formato y existencia
     if not sku_oficial and sku_nueva:
         existing = verificar_sku_existe(sku_nueva)
@@ -319,18 +323,18 @@ def insert_map_producto(producto_id, codigo_original, sku_nueva, nombre, categor
             sku_oficial = existing
         elif sku_nueva.startswith("SKU-"):
             sku_oficial = sku_nueva
-    
+
     # Fallback: Buscar por nombre+categoria en DB
     if not sku_oficial:
         sku_existente = obtener_sku_existente(nombre, categoria)
         if sku_existente:
             sku_oficial = sku_existente
-    
+
     # Last resort: Generate new SKU
     if not sku_oficial:
         es_servicio = not bool(codigo_original)  # Service if no original SKU
         sku_oficial = find_sku()
-    
+
     # Use producto_id as source_code if no SKU original
     if codigo_original:
         source_code = codigo_original
@@ -399,7 +403,9 @@ def convertir_sku(sku: str) -> str:
     ----------------------------------------------------------------------- """
 
 
-def transform_supabase(clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None):
+def transform_supabase(
+    clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None
+):
     """
     Transforma y carga datos de Supabase a staging.
 
@@ -435,7 +441,9 @@ def transform_supabase(clientes, productos, ordenes, orden_detalles, eq_map: "Eq
             sku_normalizado = convertir_sku(codigo_original) if codigo_original else ""
 
             # Use equivalence map for SKU resolution
-            insert_map_producto(producto_id, codigo_original, sku_normalizado, nombre, categoria, eq_map)
+            insert_map_producto(
+                producto_id, codigo_original, sku_normalizado, nombre, categoria, eq_map
+            )
             productos_procesados += 1
         except Exception:
             productos_errores += 1
@@ -565,7 +573,8 @@ def insert_orden_items_stg_with_progress(
                 conn.commit()
                 print(
                     f"\r    supab: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
-                    end="", flush=True
+                    end="",
+                    flush=True,
                 )
 
         conn.commit()  # Final commit
@@ -590,7 +599,9 @@ def insert_clientes_stg_with_progress(clientes, productos_count, items_count):
             if fecha_creado_raw:
                 try:
                     if isinstance(fecha_creado_raw, str):
-                        fecha_creado_dt = datetime.fromisoformat(fecha_creado_raw).date()
+                        fecha_creado_dt = datetime.fromisoformat(
+                            fecha_creado_raw
+                        ).date()
                         fecha_creado_raw_str = fecha_creado_raw
                     elif hasattr(fecha_creado_raw, "date"):
                         fecha_creado_dt = fecha_creado_raw.date()
@@ -642,7 +653,11 @@ def insert_clientes_stg_with_progress(clientes, productos_count, items_count):
                 procesados += 1
                 if procesados % BATCH_SIZE == 0:
                     conn.commit()
-                    print(f"\r    supab: {procesados}/{total_clientes} clients...", end="", flush=True)
+                    print(
+                        f"\r    supab: {procesados}/{total_clientes} clients...",
+                        end="",
+                        flush=True,
+                    )
             except Exception:
                 errores += 1
                 continue

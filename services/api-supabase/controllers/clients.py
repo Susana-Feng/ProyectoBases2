@@ -1,9 +1,7 @@
-from datetime import datetime
 from repositories.clients import ClientRepository
 
 
 class ClientsController:
-
     @staticmethod
     def get_all_clients():
         try:

@@ -8,7 +8,6 @@ clients_collection = db["clientes"]
 
 
 class clientsRepository:
-
     @staticmethod
     def get(cliente_id: str) -> Optional[dict]:
         obj = _parse_objectid(cliente_id)
@@ -28,14 +27,16 @@ class clientsRepository:
             doc["_id"] = str(doc["_id"])
             clients.append(doc)
         return clients
-    
+
 
 def _parse_objectid(oid: str) -> Optional[ObjectId]:
     if not isinstance(oid, str):
         return None
     s = oid.strip()
     # strip wrapping single/double quotes if present
-    if len(s) >= 2 and ((s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")):
+    if len(s) >= 2 and (
+        (s[0] == '"' and s[-1] == '"') or (s[0] == "'" and s[-1] == "'")
+    ):
         s = s[1:-1].strip()
     try:
         return ObjectId(s)

@@ -1,8 +1,9 @@
 from typing import Any
-from fastapi import APIRouter, status
+from fastapi import APIRouter
 from controllers.clients import ClientsController
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
+
 
 @router.get("/", summary="List all clients")
 def list_orders() -> Any:

@@ -56,7 +56,7 @@ def find_sku_from_map_producto(codigo_mongo: str) -> str | None:
     with engine.connect() as conn:
         result = conn.execute(
             text(query_find_sku_by_source_code),
-            {"source_system": "mongo", "source_code": codigo_mongo}
+            {"source_system": "mongo", "source_code": codigo_mongo},
         )
         row = result.fetchone()
         if row:
@@ -72,10 +72,7 @@ def find_sku_by_sku_value(sku: str) -> str | None:
     if not sku:
         return None
     with engine.connect() as conn:
-        result = conn.execute(
-            text(query_find_sku_by_sku),
-            {"sku": sku}
-        )
+        result = conn.execute(text(query_find_sku_by_sku), {"sku": sku})
         row = result.fetchone()
         if row:
             return row[0]
@@ -91,7 +88,7 @@ def find_sku_by_name_category(nombre: str, categoria: str) -> str | None:
     with engine.connect() as conn:
         result = conn.execute(
             text(query_find_sku_by_name_category),
-            {"nombre_norm": nombre, "categoria_norm": categoria}
+            {"nombre_norm": nombre, "categoria_norm": categoria},
         )
         row = result.fetchone()
         if row:
@@ -218,12 +215,18 @@ def find_sku():
     return sku
 
 
-def insert_map_producto(codigo_original, sku_equivalencias, nombre, categoria, eq_map: "EquivalenceMap" = None):
+def insert_map_producto(
+    codigo_original,
+    sku_equivalencias,
+    nombre,
+    categoria,
+    eq_map: "EquivalenceMap" = None,
+):
     """
     Inserta un producto en la tabla stg.map_producto.
-    
+
     Uses the equivalence map (built from ALL sources) to get the correct SKU.
-    
+
     Args:
         codigo_original: codigo_mongo del producto
         sku_equivalencias: equivalencias.sku del documento (puede estar vacío)
@@ -232,39 +235,39 @@ def insert_map_producto(codigo_original, sku_equivalencias, nombre, categoria, e
         eq_map: Mapa de equivalencias de productos
     """
     sku_oficial = None
-    
+
     # Use equivalence map (preferred - has info from all sources)
     if eq_map:
         sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
-    
+
     # Fallback: Si tiene equivalencias.sku, verificar que sea válido
     if not sku_oficial and sku_equivalencias:
         sku_norm = sku_equivalencias
         if sku_norm.upper().startswith("SKU") and "-" not in sku_norm:
             sku_norm = f"SKU-{sku_norm[3:]}"
-        
+
         existing = find_sku_by_sku_value(sku_norm)
         if existing:
             sku_oficial = existing
         else:
             sku_oficial = sku_norm
-    
+
     # Fallback: Buscar por source_code (codigo_mongo) en registros previos
     if not sku_oficial and codigo_original:
         sku_from_map = find_sku_from_map_producto(codigo_original)
         if sku_from_map:
             sku_oficial = sku_from_map
-    
+
     # Fallback: Buscar por nombre+categoria en DB
     if not sku_oficial:
         sku_by_name = find_sku_by_name_category(nombre, categoria)
         if sku_by_name:
             sku_oficial = sku_by_name
-    
+
     # Last resort: generate new SKU
     if not sku_oficial:
         sku_oficial = find_sku()
-    
+
     # Ensure source_code is never empty
     if not codigo_original:
         codigo_original = "Sin código"
@@ -321,12 +324,14 @@ def insert_orden_items_stg(items_flat, clientes_count, productos_count):
     BATCH_SIZE = 500
 
     # Pre-load all product codes from MongoDB (much faster than individual queries)
-    product_ids = list(set(i.get("producto_id") for i in items_flat if i.get("producto_id")))
+    product_ids = list(
+        set(i.get("producto_id") for i in items_flat if i.get("producto_id"))
+    )
     productos_map = {}
     try:
         for prod in products_collection.find(
             {"_id": {"$in": [ObjectId(pid) for pid in product_ids]}},
-            {"codigo_mongo": 1}
+            {"codigo_mongo": 1},
         ):
             productos_map[str(prod["_id"])] = prod.get("codigo_mongo")
     except Exception:
@@ -397,7 +402,8 @@ def insert_orden_items_stg(items_flat, clientes_count, productos_count):
                 conn.commit()
                 print(
                     f"\r    mongo: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
-                    end="", flush=True
+                    end="",
+                    flush=True,
                 )
 
         conn.commit()  # Final commit
@@ -457,7 +463,11 @@ def insert_clientes_stg(clientes):
                 procesados += 1
                 if procesados % BATCH_SIZE == 0:
                     conn.commit()
-                    print(f"\r    mongo: {procesados}/{total_clientes} clients...", end="", flush=True)
+                    print(
+                        f"\r    mongo: {procesados}/{total_clientes} clients...",
+                        end="",
+                        flush=True,
+                    )
             except Exception:
                 errores += 1
                 continue
@@ -475,7 +485,7 @@ def insert_clientes_stg(clientes):
 def transform_mongo(productos, clientes, ordenes, eq_map: "EquivalenceMap" = None):
     """
     Transforma y carga datos de MongoDB a staging.
-    
+
     Args:
         productos: Lista de productos extraídos
         clientes: Lista de clientes extraídos

@@ -6,6 +6,7 @@ from schemas.orders import order
 
 router = APIRouter(prefix="/order", tags=["Order"])
 
+
 @router.get("/", summary="List orders")
 def list_orders(skip: int = 0, limit: int = 10) -> Any:
     return OrdersController.get_all_orders(skip=skip, limit=limit)

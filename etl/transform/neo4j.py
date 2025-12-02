@@ -293,38 +293,37 @@ def verificar_sku_existe(sku: str) -> str | None:
     if not sku:
         return None
     with engine.connect() as conn:
-        result = conn.execute(
-            text(query_find_sku_exists),
-            {"sku": sku}
-        )
+        result = conn.execute(text(query_find_sku_exists), {"sku": sku})
         row = result.fetchone()
         if row:
             return row[0]
     return None
 
 
-def insert_producto_neo4j(producto: dict, nombre: str, categoria: str, eq_map: "EquivalenceMap" = None):
+def insert_producto_neo4j(
+    producto: dict, nombre: str, categoria: str, eq_map: "EquivalenceMap" = None
+):
     """
     Inserta un producto de Neo4j en map_producto.
-    
+
     Uses the equivalence map (built from ALL sources) to get the correct SKU.
-    
+
     Args:
         producto: Dict con datos del producto (sku, codigo_alt, codigo_mongo, nombre, categoria)
         nombre: Nombre del producto
         categoria: Categoría del producto
         eq_map: Mapa de equivalencias de productos
-    
+
     Returns:
         str: SKU oficial asignado
     """
     sku = producto.get("sku")
     sku_oficial = None
-    
+
     # Use equivalence map (preferred - has info from all sources)
     if eq_map:
         sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
-    
+
     # Fallback: Si tiene SKU, verificar formato y existencia
     if not sku_oficial and sku:
         sku_norm = convertir_sku(sku)
@@ -333,20 +332,20 @@ def insert_producto_neo4j(producto: dict, nombre: str, categoria: str, eq_map: "
             sku_oficial = existing
         elif sku_norm.startswith("SKU-"):
             sku_oficial = sku_norm
-    
+
     # Fallback: Buscar por nombre+categoria en DB
     if not sku_oficial:
         sku_existente = obtener_sku_existente(nombre, categoria)
         if sku_existente:
             sku_oficial = sku_existente
-    
+
     # Last resort: generate new SKU
     if not sku_oficial:
         sku_oficial = find_sku()
-    
+
     # Use SKU as source_code for Neo4j
     source_code = sku if sku else "Sin código"
-    
+
     with engine.connect() as conn:
         conn.execute(
             text(query_insert_map_producto),
@@ -360,7 +359,7 @@ def insert_producto_neo4j(producto: dict, nombre: str, categoria: str, eq_map: "
             },
         )
         conn.commit()
-    
+
     return sku_oficial
 
 
@@ -494,7 +493,8 @@ def insert_orden_items_stg(orden_completa, clientes_count, productos_count):
                 conn.commit()
                 print(
                     f"\r    neo4j: {clientes_count} clients | {productos_count} products | {procesados}/{total_items} items...",
-                    end="", flush=True
+                    end="",
+                    flush=True,
                 )
 
         conn.commit()  # Final commit
@@ -583,7 +583,11 @@ def insert_clientes_stg(clientes):
                 procesados += 1
                 if procesados % BATCH_SIZE == 0:
                     conn.commit()
-                    print(f"\r    neo4j: {procesados}/{total_clientes} clients...", end="", flush=True)
+                    print(
+                        f"\r    neo4j: {procesados}/{total_clientes} clients...",
+                        end="",
+                        flush=True,
+                    )
             except Exception:
                 errores += 1
                 continue
@@ -615,10 +619,12 @@ def convertir_sku(sku: str) -> str:
     ----------------------------------------------------------------------- """
 
 
-def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene, eq_map: "EquivalenceMap" = None):
+def transform_Neo4j(
+    productos, clientes, rel_realizo, rel_contiene, eq_map: "EquivalenceMap" = None
+):
     """
     Transforma y carga datos de Neo4j a staging.
-    
+
     Args:
         productos: Lista de productos extraídos
         clientes: Lista de clientes extraídos
@@ -638,7 +644,7 @@ def transform_Neo4j(productos, clientes, rel_realizo, rel_contiene, eq_map: "Equ
         try:
             nombre = producto.get("nombre")
             categoria = producto.get("categoria")
-            
+
             # Use equivalence map for SKU resolution
             insert_producto_neo4j(producto, nombre, categoria, eq_map)
             productos_procesados += 1

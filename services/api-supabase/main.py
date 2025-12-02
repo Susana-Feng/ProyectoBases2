@@ -1,17 +1,16 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from config.database import supabase, get_mssql_connection
+from config.database import get_mssql_connection
 from routes.orders import router as orders_router
 from routes.clients import router as clients_router
 from routes.products import router as products_router
 
-app = FastAPI(title="Supabase Web API",
-              root_path="/api/supabase" )
+app = FastAPI(title="Supabase Web API", root_path="/api/supabase")
 
 DEFAULT_PORT = 3004
 
-# CORS 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,9 +19,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.on_event("startup")
 async def startup_event():
     app.state.mssql_connection = get_mssql_connection()
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -33,10 +34,12 @@ async def shutdown_event():
         except Exception:
             pass
 
+
 # Include routers (each router can have its own prefix)
 app.include_router(orders_router)
 app.include_router(clients_router)
 app.include_router(products_router)
+
 
 @app.get("/", tags=["Root"])
 async def root():

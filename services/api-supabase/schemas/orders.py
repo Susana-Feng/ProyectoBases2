@@ -20,6 +20,7 @@ class Canal(str, Enum):
     APP = "APP"
     PARTNER = "PARTNER"
 
+
 # --- PAGINATION PARAMS ---
 class PaginationParams(BaseModel):
     offset: int = Field(0, ge=0)

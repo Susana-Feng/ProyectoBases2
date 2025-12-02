@@ -6,12 +6,11 @@ from routes.orders import router as orders_router
 from routes.clients import router as clients_router
 from routes.products import router as products_router
 
-app = FastAPI(title="Neo4j Web API",
-              root_path="/api/neo4j" )
+app = FastAPI(title="Neo4j Web API", root_path="/api/neo4j")
 
 DEFAULT_PORT = 3003
 
-# CORS 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,6 +23,7 @@ app.add_middleware(
 app.include_router(orders_router)
 app.include_router(clients_router)
 app.include_router(products_router)
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -41,6 +41,7 @@ async def shutdown_event():
             driver.close()
         except Exception:
             pass
+
 
 @app.get("/", tags=["Root"])
 async def root():

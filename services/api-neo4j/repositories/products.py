@@ -2,7 +2,7 @@ from config.database import get_neo4j_driver
 
 driver = get_neo4j_driver()
 
-readProductsQuery = '''
+readProductsQuery = """
 MATCH (p:Producto)-[:PERTENECE_A]->(cat:Categoria)
 RETURN 
   p.id AS id,
@@ -13,7 +13,8 @@ RETURN
   cat.id AS categoria_id,
   cat.nombre AS categoria
 ORDER BY p.nombre ASC;
-'''
+"""
+
 
 class ProductRepository:
     @staticmethod

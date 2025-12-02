@@ -82,7 +82,8 @@ def get_max_existing_sku():
     try:
         engine = get_dw_engine()
         with engine.connect() as conn:
-            result = conn.execute(text("""
+            result = conn.execute(
+                text("""
                 SELECT MAX(
                     CAST(
                         CASE 
@@ -94,7 +95,8 @@ def get_max_existing_sku():
                 )
                 FROM stg.map_producto
                 WHERE sku_oficial LIKE 'SKU%'
-            """))
+            """)
+            )
             max_num = result.fetchone()[0]
             return max_num if max_num else 0
     except Exception:
@@ -255,18 +257,22 @@ if __name__ == "__main__":
         # Build product equivalence map from ALL sources BEFORE transformation.
         # This ensures that SKUs are resolved correctly across all sources.
         print("\n[3] Building product equivalences")
-        
+
         try:
             # Get the highest existing SKU to avoid duplicates
             max_sku = get_max_existing_sku()
-            
+
             # Extract product lists from each source
             productos_mssql = objetos_mssql[1] if objetos_mssql else None
             productos_mysql = objetos_mysql[1] if objetos_mysql else None
             productos_supabase = objetos_supabase[1] if objetos_supabase else None
-            productos_mongo = objetos_mongo[0] if objetos_mongo else None  # mongo returns (productos, clientes, ordenes)
-            productos_neo4j = objetos_neo4j["nodes"].get("Producto", []) if objetos_neo4j else None
-            
+            productos_mongo = (
+                objetos_mongo[0] if objetos_mongo else None
+            )  # mongo returns (productos, clientes, ordenes)
+            productos_neo4j = (
+                objetos_neo4j["nodes"].get("Producto", []) if objetos_neo4j else None
+            )
+
             # Build equivalence map
             eq_map = build_equivalence_map(
                 productos_mssql=productos_mssql,
@@ -277,18 +283,21 @@ if __name__ == "__main__":
                 existing_max_sku=max_sku,
                 debug=debug_mode,
             )
-            
+
             stats = eq_map.get_stats()
             print(f"    {stats['total_products']} unique products across all sources")
-            print(f"    SKU sources: MSSQL={stats['sku_from']['mssql']}, Supabase={stats['sku_from']['supabase']}, "
-                  f"Mongo={stats['sku_from']['mongo']}, Neo4j={stats['sku_from']['neo4j']}, Generated={stats['sku_from']['generated']}")
-            
+            print(
+                f"    SKU sources: MSSQL={stats['sku_from']['mssql']}, Supabase={stats['sku_from']['supabase']}, "
+                f"Mongo={stats['sku_from']['mongo']}, Neo4j={stats['sku_from']['neo4j']}, Generated={stats['sku_from']['generated']}"
+            )
+
             check_interrupt()
         except InterruptedError:
             raise
         except Exception as e:
             print(f"    Error building equivalences: {e}")
             import traceback
+
             traceback.print_exc()
             sys.exit(1)
 

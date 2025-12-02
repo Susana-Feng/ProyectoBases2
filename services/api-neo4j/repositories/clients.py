@@ -2,7 +2,7 @@ from config.database import get_neo4j_driver
 
 driver = get_neo4j_driver()
 
-readClientsQuery = '''
+readClientsQuery = """
 MATCH (c:Cliente)
 RETURN 
   c.id AS id,
@@ -10,7 +10,8 @@ RETURN
   c.genero AS genero,
   c.pais AS pais
 ORDER BY c.nombre ASC;
-'''
+"""
+
 
 class ClientRepository:
     @staticmethod

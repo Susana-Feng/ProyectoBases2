@@ -406,7 +406,7 @@ def load_dim_cliente(conn):
         source = cliente.sourceSystem
         if source not in by_source:
             by_source[source] = 0
-        
+
         # Double check to avoid duplicates
         if not cliente_exists(conn, cliente.sourceSystem, cliente.sourceCode):
             conn.execute(
@@ -441,12 +441,12 @@ def load_dim_producto(conn):
     loaded_count = 0
     skipped_count = 0
     by_source = {}
-    
+
     for producto in productos_stg:
         source = producto.SourceSystem
         if source not in by_source:
             by_source[source] = 0
-            
+
         # Check by (SourceSystem, SourceKey) AND by SKU to avoid duplicates
         if product_exists(conn, producto.SourceSystem, producto.SourceKey):
             skipped_count += 1
@@ -508,7 +508,9 @@ def load_fact_ventas(conn):
     """Carga solo ventas nuevas, evitando duplicados"""
     last_load_ts = get_last_load_timestamp(conn, "dw.FactVentas")
 
-    count_by_source_query = "SELECT Fuente, COUNT(*) AS cnt FROM dw.FactVentas GROUP BY Fuente"
+    count_by_source_query = (
+        "SELECT Fuente, COUNT(*) AS cnt FROM dw.FactVentas GROUP BY Fuente"
+    )
 
     # Check if there are new sales in staging
     result = conn.execute(text(query_select_new_orders), {"last_load_ts": last_load_ts})
@@ -597,7 +599,7 @@ def load_fact_ventas(conn):
 
     loaded_count = count_after - count_before
     skipped_count = new_records - loaded_count
-    
+
     # Calculate loaded by source
     by_source = {}
     for source in after_by_source:
@@ -672,9 +674,13 @@ def load_datawarehouse():
                     "             These will be EXCLUDED until BCCR job provides rates"
                 )
 
-            clientes_loaded, clientes_skipped, clientes_by_source = load_dim_cliente(conn)
+            clientes_loaded, clientes_skipped, clientes_by_source = load_dim_cliente(
+                conn
+            )
             productos_loaded, productos_by_source = load_dim_producto(conn)
-            ventas_loaded, ventas_skipped, diagnostics, ventas_by_source = load_fact_ventas(conn)
+            ventas_loaded, ventas_skipped, diagnostics, ventas_by_source = (
+                load_fact_ventas(conn)
+            )
 
             # Print summary
             print(f"    DimTiempo: {tiempo_status}")

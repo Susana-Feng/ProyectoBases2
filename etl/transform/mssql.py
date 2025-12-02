@@ -10,7 +10,7 @@ Heterogeneidades de MS SQL Server:
 
 NOTA: Se utilizan sentencias MERGE para garantizar idempotencia del ETL.
       Si se ejecuta varias veces, no duplicará datos.
-      
+
 SKU Resolution: Uses the equivalence map built from all sources.
 """
 
@@ -291,7 +291,7 @@ def _prepare_producto_params(producto, eq_map: "EquivalenceMap" = None):
     """Prepare parameters for product insert without DB connection."""
     nombre = producto.Nombre
     categoria = producto.Categoria
-    
+
     # Get SKU from equivalence map (already resolved from all sources)
     if eq_map:
         sku_oficial = eq_map.get_sku_by_name(nombre, categoria)
@@ -300,7 +300,7 @@ def _prepare_producto_params(producto, eq_map: "EquivalenceMap" = None):
             sku_oficial = producto.SKU
     else:
         sku_oficial = producto.SKU
-    
+
     return {
         "source_system": "mssql",
         "source_code": str(producto.ProductoId),
@@ -323,7 +323,9 @@ def _prepare_orden_item_params(orden, detalle):
     canal_raw = orden.Canal.upper() if orden.Canal else "WEB"
     cantidad_num = float(detalle.Cantidad)
     precio_unit_num = float(detalle.PrecioUnit)
-    descuento_pct = float(detalle.DescuentoPct) if detalle.DescuentoPct is not None else 0.0
+    descuento_pct = (
+        float(detalle.DescuentoPct) if detalle.DescuentoPct is not None else 0.0
+    )
     total_item = cantidad_num * precio_unit_num * (1 - descuento_pct / 100.0)
 
     return {
@@ -350,7 +352,9 @@ def _prepare_orden_item_params(orden, detalle):
 # -----------------------------------------------------------------------
 
 
-def transform_mssql(clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None):
+def transform_mssql(
+    clientes, productos, ordenes, orden_detalles, eq_map: "EquivalenceMap" = None
+):
     """
     Transforma y carga los datos de MS SQL Server en las tablas de staging.
     OPTIMIZED: Uses single connection and batch commits for 10x+ speed improvement.
@@ -373,7 +377,11 @@ def transform_mssql(clientes, productos, ordenes, orden_detalles, eq_map: "Equiv
             conn.execute(text(query_insert_clientes_stg), params)
             if (i + 1) % BATCH_SIZE == 0:
                 conn.commit()
-                print(f"\r    mssql: {i + 1}/{len(clientes)} clients...", end="", flush=True)
+                print(
+                    f"\r    mssql: {i + 1}/{len(clientes)} clients...",
+                    end="",
+                    flush=True,
+                )
         conn.commit()
 
         # 2. Process products (batch) - using equivalence map for SKU resolution
@@ -384,7 +392,11 @@ def transform_mssql(clientes, productos, ordenes, orden_detalles, eq_map: "Equiv
             productos_dict[producto.ProductoId] = producto.SKU
             if (i + 1) % BATCH_SIZE == 0:
                 conn.commit()
-                print(f"\r    mssql: {len(clientes)} clients | {i + 1}/{len(productos)} products...", end="", flush=True)
+                print(
+                    f"\r    mssql: {len(clientes)} clients | {i + 1}/{len(productos)} products...",
+                    end="",
+                    flush=True,
+                )
         conn.commit()
 
         # 3. Process order items (batch)
@@ -401,7 +413,8 @@ def transform_mssql(clientes, productos, ordenes, orden_detalles, eq_map: "Equiv
                     conn.commit()
                     print(
                         f"\r    mssql: {len(clientes)} clients | {len(productos)} products | {items_procesados}/{total_items} items...",
-                        end="", flush=True
+                        end="",
+                        flush=True,
                     )
         conn.commit()
 

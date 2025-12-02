@@ -1,4 +1,4 @@
-from typing import List, Any
+from typing import Any
 from fastapi import HTTPException
 from bson import ObjectId as BsonObjectId
 from repositories.orders import orderRepository
@@ -7,11 +7,13 @@ from schemas.orders import order
 # module-level repo (same as current)
 order_repository = orderRepository()
 
+
 class OrdersController:
     @staticmethod
     def get_all_orders(skip: int = 0, limit: int = 10):
         orders = order_repository.get_all(skip=skip, limit=limit)
         total = len(orders)
+
         # ensure any nested ObjectId values are converted to str
         def _convert(o: Any):
             if isinstance(o, BsonObjectId):
@@ -30,6 +32,7 @@ class OrdersController:
         order = order_repository.get(order_id)
         if not order:
             raise HTTPException(status_code=404, detail=f"order {order_id} not found")
+
         # convert nested ObjectId values if any
         def _convert(o: Any):
             if isinstance(o, BsonObjectId):
