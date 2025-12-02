@@ -47,11 +47,14 @@ CREATE TABLE jobs.BCCR_Config (
     UpdatedAt DATETIME2 NOT NULL DEFAULT SYSDATETIME()
 );
 
+-- NOTA: Los valores __BCCR_TOKEN__, __BCCR_EMAIL__, __BCCR_NOMBRE__ son placeholders
+-- que se reemplazan automáticamente por dev.sh antes de la inicialización.
+-- Si se va a ejecutar manualmente, reemplazarlos con las credenciales del BCCR.
 INSERT INTO jobs.BCCR_Config (ParamName, ParamValue, Description) VALUES
 ('BCCR_ENDPOINT', 'https://gee.bccr.fi.cr/Indicadores/Suscripciones/WS/wsindicadoreseconomicos.asmx/ObtenerIndicadoresEconomicos', 'URL del WebService del BCCR'),
-('BCCR_TOKEN', 'YOUR_BCCR_TOKEN', 'Token de autenticación del BCCR'),
-('BCCR_EMAIL', 'your-email@example.com', 'Email registrado en BCCR'),
-('BCCR_NOMBRE', 'Your Name', 'Nombre registrado en BCCR'),
+('BCCR_TOKEN', '__BCCR_TOKEN__', 'Token de autenticación del BCCR'),
+('BCCR_EMAIL', '__BCCR_EMAIL__', 'Email registrado en BCCR'),
+('BCCR_NOMBRE', '__BCCR_NOMBRE__', 'Nombre registrado en BCCR'),
 ('INDICADOR_COMPRA', '317', 'Código del indicador de compra USD/CRC'),
 ('INDICADOR_VENTA', '318', 'Código del indicador de venta USD/CRC'),
 ('YEARS_HISTORICO', '3', 'Años de histórico a cargar en el init'),

@@ -219,16 +219,65 @@ run_remote_mssql_init() {
 	ensure_command sqlcmd
 	server="$host,$port"
 	log_info "Initializing remote MSSQL at $server"
+	
+	# Preprocess SQL files to replace BCCR placeholders
+	preprocess_bccr_sql_files
+	
 	for f in $(ls -1 "$INFRA_DB_DIR/mssql/init"/*.sql 2>/dev/null | sort); do
 		log_info "Running $(basename "$f") on remote instance"
 		sqlcmd -C -S "$server" -U sa -P "$pass" -i "$f"
 	done
+	
+	# Restore original SQL files
+	restore_bccr_sql_files
+	
 	seed_file="$PROJECT_ROOT/data/out/mssql_data.sql"
 	if [[ -f "$seed_file" ]]; then
 		log_info "Running seed $(basename "$seed_file")"
 		sqlcmd -C -S "$server" -U sa -P "$pass" -i "$seed_file"
 	else
 		log_info "Seed mssql_data.sql not found, skipping"
+	fi
+}
+
+preprocess_bccr_sql_files() {
+	# Replace BCCR placeholders in SQL files before initialization
+	local bccr_sql="$INFRA_DB_DIR/mssql/init/40_bccr_jobs.sql"
+	
+	if [[ ! -f "$bccr_sql" ]]; then
+		return
+	fi
+	
+	local bccr_token bccr_email bccr_nombre
+	bccr_token=$(read_env_value "$COMPOSE_ENV_FILE" BCCR_TOKEN "")
+	bccr_email=$(read_env_value "$COMPOSE_ENV_FILE" BCCR_EMAIL "")
+	bccr_nombre=$(read_env_value "$COMPOSE_ENV_FILE" BCCR_NOMBRE "")
+	
+	if [[ -z "$bccr_token" || -z "$bccr_email" || -z "$bccr_nombre" ]]; then
+		log_warn "BCCR credentials not found in $COMPOSE_ENV_FILE"
+		log_warn "Add BCCR_TOKEN, BCCR_EMAIL, BCCR_NOMBRE to your .env.local file"
+		log_warn "BCCR job will be initialized with placeholder values"
+		return
+	fi
+	
+	log_info "Injecting BCCR credentials into SQL init script"
+	
+	# Backup original file
+	cp "$bccr_sql" "${bccr_sql}.bak"
+	
+	# Replace placeholders with actual values
+	sed -i "s|__BCCR_TOKEN__|${bccr_token}|g" "$bccr_sql"
+	sed -i "s|__BCCR_EMAIL__|${bccr_email}|g" "$bccr_sql"
+	sed -i "s|__BCCR_NOMBRE__|${bccr_nombre}|g" "$bccr_sql"
+}
+
+restore_bccr_sql_files() {
+	# Restore original SQL files after initialization
+	local bccr_sql="$INFRA_DB_DIR/mssql/init/40_bccr_jobs.sql"
+	
+	if [[ -f "${bccr_sql}.bak" ]]; then
+		mv "${bccr_sql}.bak" "$bccr_sql"
+		log_info "Restored original BCCR SQL file"
 	fi
 }
 
@@ -271,11 +320,59 @@ configure_mssql_backend_env() {
 	fi
 }
 
+configure_mssql_dw_env() {
+	# Configura las variables de MSSQL DW para backends que necesitan conectarse al Data Warehouse
+	# (mongo, supabase, neo4j) según el modo remote/local
+	local stack=$1
+	local env_file
+	env_file=$(backend_env_file "$stack")
+	if [[ -z "$env_file" ]]; then
+		log_warn "No .env file found for $stack backend"
+		return
+	fi
+
+	local host port pass user db
+	user=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_USER "sa")
+	db=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_DW_DB "DW_SALES")
+
+	if [[ "$MSSQL_MODE" == "local" ]]; then
+		host=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_LOCAL_HOST "localhost")
+		port=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_LOCAL_PORT "1433")
+		pass=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_LOCAL_PASS "YourStrong@Passw0rd1")
+		log_info "Configuring $stack backend with local MSSQL DW ($host:$port)"
+	else
+		host=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_HOST "")
+		port=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_PORT "15433")
+		pass=$(read_env_value "$COMPOSE_ENV_FILE" MSSQL_REMOTE_PASS "YourStrong@Passw0rd1")
+		log_info "Configuring $stack backend with remote MSSQL DW ($host:$port)"
+	fi
+
+	if [[ -z "$host" ]]; then
+		log_warn "No MSSQL host configured for $stack backend DW connection"
+		return
+	fi
+
+	# Update or add MSSQL_DW_* variables
+	local vars=("MSSQL_DW_HOST=$host" "MSSQL_DW_PORT=$port" "MSSQL_DW_USER=$user" "MSSQL_DW_PASS=$pass" "MSSQL_DW_DB=$db")
+	for var in "${vars[@]}"; do
+		local key="${var%%=*}"
+		local value="${var#*=}"
+		if grep -q "^${key}=" "$env_file"; then
+			sed -i "s|^${key}=.*$|${key}=${value}|" "$env_file"
+		else
+			printf '%s=%s\n' "$key" "$value" >> "$env_file"
+		fi
+	done
+}
+
 maybe_configure_backend_env() {
 	local stack=$1
 	case "$stack" in
 		mssql)
 			configure_mssql_backend_env
+			;;
+		mongo|supabase|neo4j)
+			configure_mssql_dw_env "$stack"
 			;;
 		*) ;;
 	esac
@@ -632,8 +729,20 @@ handle_up() {
 handle_init() {
 	local stack=$1
 	stop_stack_processes "$stack"
+	
+	# For MSSQL, preprocess BCCR credentials before init
+	if [[ "$stack" == "mssql" ]]; then
+		preprocess_bccr_sql_files
+	fi
+	
 	start_database "$stack" true
 	wait_for_init_container "$stack"
+	
+	# Restore original SQL files after init completes
+	if [[ "$stack" == "mssql" ]]; then
+		restore_bccr_sql_files
+	fi
+	
 	if [[ "$stack" == "mssql" || "$stack" == "mysql" ]]; then
 		run_prisma_tasks "$stack"
 	fi
